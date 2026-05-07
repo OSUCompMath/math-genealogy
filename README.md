@@ -1,144 +1,183 @@
-# Math Genealogy Ancestor Scraper
+# Math Genealogy Graph Exporter
 
-This repository contains a small Python script, `mgp_ancestors.py`, for traversing the advisor graph of the [Mathematics Genealogy Project](https://www.genealogy.math.ndsu.nodak.edu/) upward from a given Math Genealogy ID.
+Export advisor ancestry graphs from the
+[Mathematics Genealogy Project](https://www.genealogy.math.ndsu.nodak.edu/) by
+passing one or more Math Genealogy IDs.
 
-Given a starting person, the script crawls their advisors, then their advisors' advisors, and so on. It records all discovered antecedents, their Math Genealogy IDs, names, shortest advisor-graph distance from the starting person, and profile URLs.
+The main command is `export_graph.py`. If an ID has not been scraped yet, the
+script scrapes it first, caches the CSV under `scrapes/`, and then exports the
+combined graph. When an automatic scrape runs, progress is printed by default.
 
 ## Files
 
 ```text
-mgp_ancestors.py   # Main scraping/traversal script
-README.md          # Usage instructions
+export_graph.py   # Main ID-to-graph export command
+mgp_ancestors.py  # Scraping helper used by export_graph.py
+README.md         # Usage instructions
 ```
 
-## Create the conda environment
+## Setup
 
 ```bash
 conda create -n webscraping python=3.12 -y
 conda activate webscraping
-conda install -c conda-forge requests beautifulsoup4 lxml tqdm -y
+conda install -c conda-forge requests beautifulsoup4 lxml tqdm graphviz -y
 ```
 
-## Basic usage
+Graphviz provides the `dot` command used to render `.dot` graph files as images.
 
-Run the script with a Math Genealogy ID:
+## Quick Start
+
+Scrape one or more Math Genealogy IDs:
 
 ```bash
-python mgp_ancestors.py 123456
+conda run --no-capture-output -n webscraping python mgp_ancestors.py 123 789 234
 ```
 
-Replace `123456` with the Math Genealogy ID of the person whose ancestors you want to traverse.
+This writes one cached CSV per ID under `scrapes/`.
 
-By default, the script writes:
+Export any combination of scraped IDs:
+
+```bash
+conda run -n webscraping python export_graph.py 123 789 \
+  --out graph.dot
+```
+
+Render it with Graphviz:
+
+```bash
+dot -Tpng graph.dot -o graph.png
+```
+
+Nodes show names, plus dissertation year and country when available. Arrows point
+from advisor to advisee. For one starting ID, orange nodes and edges highlight
+all tied longest advisor paths. For multiple starting IDs, green nodes highlight
+common ancestors shared by at least two starting IDs. Requested starting IDs are
+placed near the bottom of the rendered graph.
+
+## Scrape IDs
+
+```bash
+conda run --no-capture-output -n webscraping python mgp_ancestors.py 123 789 234
+```
+
+This automatically creates `scrapes/` and writes:
 
 ```text
-mgp_ancestors.csv
-mgp_ancestors.txt
+scrapes/mgp_ancestors_123.csv
+scrapes/mgp_ancestors_123.txt
+scrapes/mgp_ancestors_789.csv
+scrapes/mgp_ancestors_789.txt
+scrapes/mgp_ancestors_234.csv
+scrapes/mgp_ancestors_234.txt
 ```
 
-## Recommended usage
+The default request delay is `0.5` seconds.
+
+Custom output paths are optional. If provided, pass one path per input ID:
+
+```bash
+conda run --no-capture-output -n webscraping python mgp_ancestors.py 123 789 \
+  --out first.csv second.csv \
+  --txt first.txt second.txt
+```
+
+## Export Graphs
+
+```bash
+conda run -n webscraping python export_graph.py 123 789 \
+  --out graph.dot
+```
+
+You can call `export_graph.py` with any combination of IDs:
+
+```bash
+conda run -n webscraping python export_graph.py 123 234 \
+  --out graph_123_234.dot
+
+conda run -n webscraping python export_graph.py 123 789 234 \
+  --out graph_all.dot
+```
+
+The output graph merges all scraped nodes and edges. Shared ancestors appear
+once, with distance metadata for each starting ID that reaches them.
+
+Graph node labels show the advisor name, dissertation year, and country when the
+Mathematics Genealogy Project provides them.
+
+For one starting ID, all tied longest advisor paths are highlighted in orange.
+For multiple starting IDs, common ancestors shared by at least two starting IDs
+are highlighted in green. Requested starting IDs are placed near the bottom of
+the rendered graph.
+
+## Render With Graphviz
+
+```bash
+dot -Tpng graph.dot -o graph.png
+```
+
+If you change the ID combination or rerun scraping, regenerate the `.dot` file
+with `export_graph.py` before rendering a new image.
+
+Other useful formats:
+
+```bash
+dot -Tpdf graph.dot -o graph.pdf
+dot -Tsvg graph.dot -o graph.svg
+```
+
+## Export JSON
+
+For programmatic analysis:
+
+```bash
+conda run -n webscraping python export_graph.py 123 789 234 \
+  --format json \
+  --out graph.json
+```
+
+## Cache Behavior
+
+Per-ID scrape CSVs are cached here:
+
+```text
+scrapes/mgp_ancestors_<ID>.csv
+```
+
+If a cached CSV exists, `export_graph.py` reuses it and does not scrape again.
+
+## Scraping Options
 
 Use a polite delay between requests:
 
 ```bash
-python mgp_ancestors.py 123456 \
-  --out ancestors.csv \
-  --txt ancestors.txt \
-  --delay 0.5
+conda run -n webscraping python export_graph.py 123 \
+  --delay 0.5 \
+  --out graph.dot
 ```
 
-## Limit traversal depth
-
-To stop after a fixed number of advisor generations:
+Limit traversal depth for testing:
 
 ```bash
-python mgp_ancestors.py 123456 --max-depth 10
+conda run -n webscraping python export_graph.py 123 \
+  --max-depth 3 \
+  --out graph.dot
 ```
 
-This is useful for testing or for avoiding a very deep historical traversal.
-
-## Output format
-
-The CSV file contains columns:
-
-```text
-distance,id,name,advisors,url
-```
-
-where:
-
-- `distance` is the shortest advisor-graph distance from the starting person,
-- `id` is the Math Genealogy ID,
-- `name` is the person's name,
-- `advisors` lists the person's advisors found by the script,
-- `url` is the Math Genealogy profile URL.
-
-Example rows may look like:
-
-```text
-0,123456,Starting Person,...
-1,234567,Advisor One,...
-1,345678,Advisor Two,...
-```
-
-The text file gives a simpler readable list:
-
-```text
- 0    123456  Starting Person
- 1    234567  Advisor One
- 1    345678  Advisor Two
-```
-
-## Progress bar
-
-The script uses `tqdm` to show progress while crawling. The progress bar displays:
-
-- current Math Genealogy ID,
-- current depth,
-- queue size,
-- number of discovered people,
-- number of failed pages.
-
-Disable the progress bar with:
+Hide scrape progress output:
 
 ```bash
-python mgp_ancestors.py 123456 --quiet
+conda run -n webscraping python export_graph.py 123 \
+  --quiet \
+  --out graph.dot
 ```
 
-## Notes and cautions
+## Notes
 
-The Mathematics Genealogy Project includes both modern doctoral-advisor relationships and older historical mentor/intellectual-lineage relationships. For very old ancestors, the edges should not be interpreted as modern PhD supervision.
+The Mathematics Genealogy Project includes both modern doctoral-advisor
+relationships and older historical mentor or intellectual-lineage relationships.
+For very old ancestors, edges should not always be interpreted as modern PhD
+supervision.
 
-The script is intentionally single-threaded and includes a configurable delay between requests. Please avoid aggressive scraping.
-
-## Troubleshooting
-
-### `ModuleNotFoundError`
-
-Make sure the conda environment is active:
-
-```bash
-conda activate webscraping
-```
-
-Then reinstall the dependencies:
-
-```bash
-conda install -c conda-forge requests beautifulsoup4 lxml tqdm -y
-```
-
-### Pages fail to fetch
-
-Try increasing the delay:
-
-```bash
-python mgp_ancestors.py 123456 --delay 1.0
-```
-
-### I only want a quick test
-
-Use a small maximum depth:
-
-```bash
-python mgp_ancestors.py 123456 --max-depth 3
-```
+The scraper is intentionally single-threaded and supports configurable delay.
+Please avoid aggressive scraping.
