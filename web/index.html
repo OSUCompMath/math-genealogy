@@ -1,0 +1,112 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Ohio State Math Genealogy</title>
+    <link rel="stylesheet" href="styles.css">
+  </head>
+  <body>
+    <div class="app-shell">
+      <header class="topbar">
+        <div>
+          <p class="eyebrow">Ohio State Mathematics</p>
+          <h1>Faculty Math Genealogy</h1>
+        </div>
+        <div class="source-row" id="sourceRow"></div>
+      </header>
+
+      <aside class="sidebar" aria-label="Graph filters">
+        <section class="panel">
+          <div class="panel-heading">
+            <h2>Areas</h2>
+          </div>
+          <div class="group-list" id="groupList"></div>
+        </section>
+
+        <section class="panel faculty-panel">
+          <div class="panel-heading">
+            <h2>Faculty</h2>
+            <div class="mini-actions">
+              <button type="button" id="selectAllFaculty">All</button>
+              <button type="button" id="clearFaculty">Clear</button>
+            </div>
+          </div>
+          <label class="field-label" for="facultySearch">Search</label>
+          <input id="facultySearch" class="search-input" type="search" autocomplete="off">
+          <div class="faculty-list" id="facultyList"></div>
+        </section>
+      </aside>
+
+      <main class="workspace">
+        <section class="metrics" id="metrics"></section>
+
+        <section class="graph-panel">
+          <div class="graph-toolbar">
+            <div>
+              <h2 id="graphTitle">Lineage Graph</h2>
+              <p id="graphSubtitle"></p>
+            </div>
+            <div class="graph-control-stack">
+              <label class="range-control" for="minShared">
+                <span>Shared by at least <strong id="minSharedLabel">2</strong></span>
+                <input id="minShared" type="range" min="1" max="2" value="2">
+              </label>
+              <label class="range-control" for="visibleLimit">
+                <span>Visible ancestors <strong id="visibleLimitLabel">60</strong></span>
+                <input id="visibleLimit" type="range" min="25" max="220" step="5" value="60">
+              </label>
+              <div class="zoom-controls" aria-label="Graph view controls">
+                <button type="button" id="zoomOut" aria-label="Zoom out" title="Zoom out">-</button>
+                <button type="button" id="zoomIn" aria-label="Zoom in" title="Zoom in">+</button>
+                <button type="button" id="fitGraph" aria-label="Fit graph width" title="Fit graph width">Width</button>
+                <button type="button" id="fitAllGraph" aria-label="Fit full graph" title="Fit full graph">Full</button>
+                <button type="button" id="focusFaculty" aria-label="Focus selected faculty" title="Focus selected faculty">Faculty</button>
+              </div>
+            </div>
+          </div>
+          <div class="canvas-wrap">
+            <canvas id="graphCanvas" width="1200" height="620"></canvas>
+            <canvas id="overviewCanvas" class="overview-canvas" width="210" height="140" aria-label="Graph overview"></canvas>
+            <div id="graphTooltip" class="graph-tooltip" hidden></div>
+          </div>
+        </section>
+
+        <section class="lower-grid">
+          <section class="panel table-panel">
+            <div class="panel-heading">
+              <h2>Common Ancestors</h2>
+            </div>
+            <p class="table-note">
+              Ranked by how many selected faculty share the ancestor, then by advisor-step distance.
+            </p>
+            <div class="table-wrap">
+              <table>
+                <thead>
+                  <tr>
+                    <th>Name</th>
+                    <th>Year</th>
+                    <th>Country</th>
+                    <th title="Number of selected faculty whose lineage contains this ancestor">Faculty<br>Reached</th>
+                    <th title="Largest advisor-step distance from this ancestor to any matched faculty member">Farthest<br>Steps</th>
+                    <th title="Sum of advisor-step distances from this ancestor to all matched faculty">Total<br>Steps</th>
+                  </tr>
+                </thead>
+                <tbody id="ancestorRows"></tbody>
+              </table>
+            </div>
+          </section>
+
+          <section class="panel detail-panel">
+            <div class="panel-heading">
+              <h2>Selection</h2>
+            </div>
+            <div id="nodeDetail" class="node-detail"></div>
+          </section>
+        </section>
+      </main>
+    </div>
+
+    <script src="app.js"></script>
+  </body>
+</html>

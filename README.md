@@ -136,6 +136,70 @@ conda run -n webscraping python export_graph.py 123 789 234 \
   --out graph.json
 ```
 
+## Ohio State Static Faculty Graph
+
+The Ohio State faculty roster lives in `faculty_osu.txt`. It includes the
+regular Chair/Faculty and Faculty sections from the Ohio State math people page,
+their matched MGP IDs, and a verification status comparing MGP degree
+school/year against the Ohio State profile when that profile lists the PhD.
+The companion `faculty_areas_osu.txt` file stores static Ohio State profile
+area metadata. Graph groups use the actual OSU `Filed In` category names from
+faculty profiles.
+
+Build the static shared graph:
+
+```bash
+conda run -n webscraping python build_static_data.py
+```
+
+This writes `data/osu_mgp_graph.json`. The builder uses a shared per-person
+cache under `.cache/mgp_people`, so overlapping faculty lineages are fetched and
+stored once rather than re-scraped separately for every faculty member.
+
+The JSON is structured for efficient GUI queries:
+
+- one shared `people` table for all MGP records
+- `edges` as advisor-to-student index pairs
+- `faculty_mask` bitmasks on people for fast common-ancestor filtering
+- `ancestors_by_faculty` and `distances_by_person` indexes for ranking and paths
+
+Example local queries:
+
+```bash
+python3 graph_queries.py common "Anna Yesypenko" "Thomas O'Leary-Roseberry"
+python3 graph_queries.py ancestors "David Anderson" --limit 10
+python3 graph_queries.py path "Anna Yesypenko" "Ferdinand Georg Frobenius"
+python3 graph_queries.py groups
+python3 graph_queries.py group-faculty applied-mathematics
+python3 graph_queries.py group-common applied-mathematics --min-faculty 5 --limit 10
+```
+
+## Static GUI
+
+The browser app under `web/` reads the static JSON file and performs all
+filtering in the browser. It does not query Ohio State or MGP at runtime.
+The Areas panel includes an All Faculty option, and the faculty checklist can
+be used to make custom cross-area selections. The graph canvas supports
+zooming, panning, width/full/faculty fitting, a visible-ancestor slider, and a
+small overview map for jumping around large views. The graph is laid out
+vertically, with older ancestors above and selected Ohio State faculty along the
+bottom, so large subsets read more like a genealogy tree. Faculty and highlighted
+ancestor labels are placed in collision-checked lanes. The GUI layout is
+computed directly in the browser from the static JSON rather than from a
+pre-rendered dot file.
+
+Run a local preview from the repository root:
+
+```bash
+python3 -m http.server 8000 --bind 127.0.0.1
+```
+
+Then open:
+
+```text
+http://127.0.0.1:8000/web/
+```
+
 ## Cache Behavior
 
 Per-ID scrape CSVs are cached here:
