@@ -4,7 +4,8 @@
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <title>Ohio State Math Genealogy</title>
-    <link rel="stylesheet" href="styles.css">
+    <link rel="stylesheet" href="https://assets.bux.osu.edu/bux-webfonts2/bux-webfonts2.css">
+    <link rel="stylesheet" href="styles.css?v=20260716-websites-bux">
   </head>
   <body>
     <div class="app-shell">
@@ -21,7 +22,34 @@
           <div class="panel-heading">
             <h2>Areas</h2>
           </div>
-          <div class="group-list" id="groupList"></div>
+          <label class="field-label area-label" id="areaMenuLabel">Area</label>
+          <div class="area-menu" id="areaMenu">
+            <button
+              type="button"
+              class="area-menu-button"
+              id="areaMenuButton"
+              aria-haspopup="listbox"
+              aria-expanded="false"
+              aria-labelledby="areaMenuLabel areaMenuCurrent"
+            >
+              <span class="area-menu-current" id="areaMenuCurrent">All Faculty</span>
+              <span class="area-menu-count" id="areaMenuCount"></span>
+            </button>
+            <div class="area-menu-list" id="areaMenuList" role="listbox" aria-labelledby="areaMenuLabel" hidden></div>
+          </div>
+          <div class="area-summary" id="areaSummary"></div>
+        </section>
+
+        <section class="panel ancestor-panel">
+          <div class="panel-heading">
+            <h2>Ancestor PID</h2>
+            <button type="button" class="text-button" id="clearAncestor">Reset</button>
+          </div>
+          <label class="field-label" for="ancestorSearch">MGP ID or name</label>
+          <input id="ancestorSearch" class="search-input" type="search" autocomplete="off" placeholder="Gauss, Fourier, 108295">
+          <div class="ancestor-presets" id="ancestorPresets" aria-label="Suggested ancestor pids"></div>
+          <div class="ancestor-suggestions" id="ancestorSuggestions"></div>
+          <div class="ancestor-result" id="ancestorResult"></div>
         </section>
 
         <section class="panel faculty-panel">
@@ -107,6 +135,6 @@
       </main>
     </div>
 
-    <script src="app.js"></script>
+    <script src="app.js?v=20260716-websites-bux"></script>
   </body>
 </html>

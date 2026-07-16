@@ -1,8 +1,15 @@
 const DATA_URLS = ["../data/osu_mgp_graph.json", "data/osu_mgp_graph.json"];
+const DATA_VERSION = "20260716-websites-bux";
 const DEFAULT_VISIBLE_ANCESTORS = 60;
 const MIN_SCALE = 0.15;
 const MAX_SCALE = 2.8;
 const OVERVIEW_PADDING = 10;
+const MAX_ANCESTOR_SUGGESTIONS = 6;
+const ANCESTOR_PRESETS = [
+  { label: "Gauss", pid: "18231" },
+  { label: "Fourier", pid: "17981" },
+  { label: "Laplace", pid: "108295" },
+];
 
 const state = {
   payload: null,
@@ -13,6 +20,9 @@ const state = {
   edges: [],
   peopleMasks: [],
   selectedGroupId: "all-faculty",
+  areaMenuOpen: false,
+  ancestorQuery: "",
+  selectedAncestorIndex: null,
   selectedFaculty: new Set(),
   minShared: 2,
   visibleAncestorLimit: DEFAULT_VISIBLE_ANCESTORS,
@@ -37,11 +47,21 @@ const state = {
 
 const els = {
   sourceRow: document.querySelector("#sourceRow"),
-  groupList: document.querySelector("#groupList"),
+  areaMenu: document.querySelector("#areaMenu"),
+  areaMenuButton: document.querySelector("#areaMenuButton"),
+  areaMenuCurrent: document.querySelector("#areaMenuCurrent"),
+  areaMenuCount: document.querySelector("#areaMenuCount"),
+  areaMenuList: document.querySelector("#areaMenuList"),
+  areaSummary: document.querySelector("#areaSummary"),
   facultyList: document.querySelector("#facultyList"),
   facultySearch: document.querySelector("#facultySearch"),
   selectAllFaculty: document.querySelector("#selectAllFaculty"),
   clearFaculty: document.querySelector("#clearFaculty"),
+  ancestorSearch: document.querySelector("#ancestorSearch"),
+  ancestorPresets: document.querySelector("#ancestorPresets"),
+  ancestorSuggestions: document.querySelector("#ancestorSuggestions"),
+  ancestorResult: document.querySelector("#ancestorResult"),
+  clearAncestor: document.querySelector("#clearAncestor"),
   metrics: document.querySelector("#metrics"),
   graphTitle: document.querySelector("#graphTitle"),
   graphSubtitle: document.querySelector("#graphSubtitle"),
@@ -63,6 +83,23 @@ const els = {
 
 const ctx = els.canvas.getContext("2d");
 const overviewCtx = els.overview.getContext("2d");
+const CANVAS_FONT = "BuckeyeSans, HelveticaNeue, Helvetica, Arial, sans-serif";
+const OSU_COLORS = {
+  scarlet: "#ba0c2f",
+  scarletDark40: "#70071c",
+  scarletDark60: "#4a0513",
+  gray: "#a7b1b7",
+  grayLight20: "#bfc6cb",
+  grayLight40: "#cfd4d8",
+  grayLight60: "#dfe3e5",
+  grayLight80: "#eff1f2",
+  grayLight90: "#f6f7f8",
+  grayDark20: "#868e92",
+  grayDark40: "#646a6e",
+  grayDark60: "#3f4443",
+  grayDark80: "#212325",
+  white: "#ffffff",
+};
 
 function hexToBigInt(hex) {
   return BigInt(`0x${hex || "0"}`);
@@ -94,6 +131,18 @@ function escapeHtml(value) {
     .replaceAll(">", "&gt;")
     .replaceAll('"', "&quot;")
     .replaceAll("'", "&#039;");
+}
+
+function normalizeSearchText(value) {
+  return String(value ?? "")
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .replace(/ß/gi, "ss")
+    .toLowerCase();
+}
+
+function personMeta(person) {
+  return [person.year, person.country].filter(Boolean).join(", ") || "degree not listed";
 }
 
 function trimLabel(value, maxLength) {
@@ -131,7 +180,8 @@ async function loadData() {
   let lastError = null;
   for (const url of DATA_URLS) {
     try {
-      const response = await fetch(url);
+      const separator = url.includes("?") ? "&" : "?";
+      const response = await fetch(`${url}${separator}v=${DATA_VERSION}`, { cache: "no-store" });
       if (!response.ok) {
         throw new Error(`${response.status} ${response.statusText}`);
       }
@@ -183,6 +233,17 @@ function maskForFaculty(indices) {
   return indices.reduce((mask, index) => mask | (1n << BigInt(index)), 0n);
 }
 
+function personIndexByMgpId(id) {
+  const rawIndex = state.payload?.indexes?.id_to_index?.[String(id).trim()];
+  const index = Number(rawIndex);
+  return Number.isInteger(index) ? index : null;
+}
+
+function descendantFacultyIndices(personIndex, scopeIndices = groupFacultyIndices()) {
+  const personMask = state.peopleMasks[personIndex] || 0n;
+  return scopeIndices.filter((index) => (personMask & (1n << BigInt(index))) !== 0n);
+}
+
 function distanceMapForPerson(personIndex) {
   const rows = state.payload.indexes.distances_by_person[String(personIndex)] || [];
   return new Map(rows.map(([facultyIndex, distance]) => [Number(facultyIndex), Number(distance)]));
@@ -201,6 +262,10 @@ function isCustomSelection() {
 }
 
 function selectionTitle() {
+  if (state.selectedAncestorIndex !== null) {
+    const person = state.people[state.selectedAncestorIndex];
+    return person ? `Descendants of ${person.name}` : "Ancestor Descendants";
+  }
   if (!activeFacultyIndices().length) {
     return "Custom Selection";
   }
@@ -217,7 +282,10 @@ function markGraphChanged(fitMode = "width") {
 
 function selectGroup(groupId, shouldRender = true) {
   state.selectedGroupId = groupId;
-  state.selectedFaculty = new Set(groupFacultyIndices());
+  state.areaMenuOpen = false;
+  state.selectedFaculty = state.selectedAncestorIndex === null
+    ? new Set(groupFacultyIndices())
+    : new Set(descendantFacultyIndices(state.selectedAncestorIndex));
   state.minShared = Math.min(2, Math.max(1, state.selectedFaculty.size));
   markGraphChanged("width");
   if (shouldRender) {
@@ -236,21 +304,212 @@ function renderSources() {
 }
 
 function renderGroups() {
-  els.groupList.innerHTML = state.groups
-    .map((group) => {
-      const active = group.id === state.selectedGroupId ? " active" : "";
+  const group = activeGroup();
+  const selectedCount = activeFacultyIndices().length;
+  els.areaMenuCurrent.textContent = group.label;
+  els.areaMenuCount.textContent = `${group.faculty_indices.length} faculty`;
+  els.areaMenuButton.setAttribute("aria-expanded", String(state.areaMenuOpen));
+  els.areaMenuList.hidden = !state.areaMenuOpen;
+  els.areaMenuList.innerHTML = state.groups
+    .map((row) => {
+      const selected = row.id === state.selectedGroupId;
       return `
-        <button type="button" class="group-button${active}" data-group-id="${group.id}">
-          <strong>${escapeHtml(group.label)}</strong>
-          <span>${group.faculty_indices.length}</span>
+        <button
+          type="button"
+          class="area-menu-option${selected ? " is-selected" : ""}"
+          role="option"
+          aria-selected="${selected ? "true" : "false"}"
+          data-group-id="${escapeHtml(row.id)}"
+        >
+          <span class="area-menu-option-name">${escapeHtml(row.label)}</span>
+          <span class="area-menu-option-count">${row.faculty_indices.length}</span>
+        </button>
+      `;
+    })
+    .join("");
+  els.areaMenuList.querySelectorAll("button").forEach((button) => {
+    button.addEventListener("click", () => selectGroup(button.dataset.groupId));
+  });
+  els.areaSummary.textContent = isCustomSelection()
+    ? `${selectedCount} selected from ${group.label}`
+    : `${group.faculty_indices.length} faculty in ${group.label}`;
+}
+
+function ancestorSuggestionRows() {
+  const query = state.ancestorQuery.trim();
+  if (!query) {
+    return [];
+  }
+  const normalizedQuery = normalizeSearchText(query);
+  const terms = normalizedQuery.split(/\s+/).filter(Boolean);
+  const numericQuery = query.replace(/\D/g, "");
+  const rows = [];
+
+  state.people.forEach((person, personIndex) => {
+    const nameText = normalizeSearchText(person.name);
+    const idText = String(person.id);
+    let score = null;
+
+    if (numericQuery && idText === numericQuery) {
+      score = -100;
+    } else if (numericQuery && idText.startsWith(numericQuery)) {
+      score = -50 + idText.length - numericQuery.length;
+    } else if (terms.length && terms.every((term) => nameText.includes(term) || idText.includes(term))) {
+      score = terms.reduce((sum, term) => sum + Math.max(0, nameText.indexOf(term)), 0);
+    }
+
+    if (score === null) {
+      return;
+    }
+
+    rows.push({
+      personIndex,
+      person,
+      score,
+      descendantCount: descendantFacultyIndices(personIndex).length,
+    });
+  });
+
+  return rows
+    .sort((a, b) =>
+      a.score - b.score ||
+      b.descendantCount - a.descendantCount ||
+      a.person.name.localeCompare(b.person.name),
+    )
+    .slice(0, MAX_ANCESTOR_SUGGESTIONS);
+}
+
+function applyAncestorPerson(personIndex, shouldRender = true) {
+  const person = state.people[personIndex];
+  if (!person) {
+    return;
+  }
+  state.selectedAncestorIndex = personIndex;
+  state.ancestorQuery = `${person.name} ${person.id}`;
+  els.ancestorSearch.value = state.ancestorQuery;
+  state.selectedFaculty = new Set(descendantFacultyIndices(personIndex));
+  state.minShared = Math.min(2, Math.max(1, state.selectedFaculty.size));
+  markGraphChanged("width");
+  state.selectedNodeIndex = personIndex;
+  state.pendingCenterNodeIndex = personIndex;
+  if (shouldRender) {
+    render();
+  }
+}
+
+function clearAncestorFilter(shouldRender = true) {
+  state.selectedAncestorIndex = null;
+  state.ancestorQuery = "";
+  els.ancestorSearch.value = "";
+  state.selectedFaculty = new Set(groupFacultyIndices());
+  state.minShared = Math.min(2, Math.max(1, state.selectedFaculty.size));
+  markGraphChanged("width");
+  if (shouldRender) {
+    render();
+  }
+}
+
+function renderAncestorPresets() {
+  els.ancestorPresets.innerHTML = ANCESTOR_PRESETS
+    .map((preset) => {
+      const personIndex = personIndexByMgpId(preset.pid);
+      const person = personIndex === null ? null : state.people[personIndex];
+      const count = personIndex === null ? 0 : descendantFacultyIndices(personIndex).length;
+      const active = personIndex !== null && personIndex === state.selectedAncestorIndex;
+      return `
+        <button
+          type="button"
+          class="ancestor-preset${active ? " is-active" : ""}"
+          data-person-index="${personIndex === null ? "" : personIndex}"
+          data-preset-label="${escapeHtml(preset.label)}"
+        >
+          <span class="ancestor-preset-name">${escapeHtml(preset.label)}</span>
+          <span class="ancestor-preset-meta">MGP ${escapeHtml(preset.pid)} · ${count} faculty</span>
         </button>
       `;
     })
     .join("");
 
-  els.groupList.querySelectorAll("button").forEach((button) => {
-    button.addEventListener("click", () => selectGroup(button.dataset.groupId));
+  els.ancestorPresets.querySelectorAll("button").forEach((button) => {
+    button.addEventListener("click", () => {
+      if (button.dataset.personIndex) {
+        const personIndex = Number(button.dataset.personIndex);
+        applyAncestorPerson(personIndex);
+        return;
+      }
+      state.ancestorQuery = button.dataset.presetLabel || "";
+      els.ancestorSearch.value = state.ancestorQuery;
+      renderAncestorTool();
+    });
   });
+}
+
+function renderAncestorSuggestions() {
+  const rows = ancestorSuggestionRows();
+  if (!rows.length) {
+    els.ancestorSuggestions.innerHTML = state.ancestorQuery.trim()
+      ? `<div class="empty">No loaded MGP person matches ${escapeHtml(state.ancestorQuery.trim())}.</div>`
+      : "";
+    return;
+  }
+
+  els.ancestorSuggestions.innerHTML = rows
+    .map(({ personIndex, person, descendantCount }) => {
+      const active = personIndex === state.selectedAncestorIndex;
+      return `
+        <button
+          type="button"
+          class="ancestor-suggestion${active ? " is-active" : ""}"
+          data-person-index="${personIndex}"
+        >
+          <span>
+            <span class="ancestor-suggestion-name">${escapeHtml(person.name)}</span>
+            <span class="ancestor-suggestion-meta">MGP ${escapeHtml(person.id)} · ${escapeHtml(personMeta(person))}</span>
+          </span>
+          <span class="ancestor-suggestion-count">${descendantCount}</span>
+        </button>
+      `;
+    })
+    .join("");
+
+  els.ancestorSuggestions.querySelectorAll("button").forEach((button) => {
+    button.addEventListener("click", () => applyAncestorPerson(Number(button.dataset.personIndex)));
+  });
+}
+
+function renderAncestorResult() {
+  if (state.selectedAncestorIndex === null) {
+    els.ancestorResult.innerHTML = "";
+    return;
+  }
+
+  const person = state.people[state.selectedAncestorIndex];
+  const descendants = descendantFacultyIndices(state.selectedAncestorIndex);
+  const group = activeGroup();
+  const chips = descendants
+    .slice(0, 10)
+    .map((index) => `<span class="ancestor-result-chip">${escapeHtml(state.faculty[index].osu_name)}</span>`)
+    .join("");
+  const extra = descendants.length > 10 ? `<span class="ancestor-result-chip">+${descendants.length - 10} more</span>` : "";
+
+  els.ancestorResult.innerHTML = `
+    <div>
+      <strong>${escapeHtml(person.name)}</strong> reaches
+      <strong>${descendants.length}</strong> of ${group.faculty_indices.length} faculty in ${escapeHtml(group.label)}.
+    </div>
+    <div>
+      <a href="${person.url}" target="_blank" rel="noreferrer">MGP ${escapeHtml(person.id)}</a>
+      · ${escapeHtml(personMeta(person))}
+    </div>
+    <div class="ancestor-result-list">${chips}${extra}</div>
+  `;
+}
+
+function renderAncestorTool() {
+  els.ancestorSearch.value = state.ancestorQuery;
+  renderAncestorPresets();
+  renderAncestorSuggestions();
+  renderAncestorResult();
 }
 
 function facultyAreaTags(faculty) {
@@ -263,6 +522,18 @@ function facultyAreaTags(faculty) {
   }
   const extra = faculty.groups.length > labels.length ? ` +${faculty.groups.length - labels.length}` : "";
   return `<span class="faculty-areas">${escapeHtml(labels.join("; "))}${extra}</span>`;
+}
+
+function facultyOsuProfileUrl(faculty) {
+  return faculty.osu_profile_url || faculty.profile_url || "";
+}
+
+function facultyWebsiteUrl(faculty) {
+  return faculty.website_url || faculty.professional_website_url || facultyOsuProfileUrl(faculty);
+}
+
+function facultyWebsiteLabel(faculty) {
+  return faculty.professional_website_url ? "Personal website" : "OSU profile";
 }
 
 function renderFaculty() {
@@ -284,15 +555,20 @@ function renderFaculty() {
     .map((faculty) => {
       const index = Number(faculty.faculty_index);
       const checked = state.selectedFaculty.has(index) ? " checked" : "";
+      const websiteUrl = facultyWebsiteUrl(faculty);
+      const websiteLink = websiteUrl
+        ? `<a href="${escapeHtml(websiteUrl)}" target="_blank" rel="noreferrer">${escapeHtml(facultyWebsiteLabel(faculty))}</a>`
+        : "";
       return `
-        <label class="faculty-item">
-          <input type="checkbox" value="${index}"${checked}>
+        <div class="faculty-item">
+          <input type="checkbox" value="${index}" aria-label="Select ${escapeHtml(faculty.osu_name)}"${checked}>
           <span>
             <span class="faculty-name">${escapeHtml(faculty.osu_name)}</span>
             <span class="faculty-title">${escapeHtml(faculty.title || faculty.filed_in.join("; "))}</span>
+            ${websiteLink ? `<span class="faculty-links">${websiteLink}</span>` : ""}
             ${facultyAreaTags(faculty)}
           </span>
-        </label>
+        </div>
       `;
     })
     .join("");
@@ -305,6 +581,7 @@ function renderFaculty() {
       } else {
         state.selectedFaculty.delete(index);
       }
+      state.selectedAncestorIndex = null;
       markGraphChanged("width");
       render();
     });
@@ -378,6 +655,9 @@ function visibleGraph() {
 
   for (const row of visibleCommon) {
     chosen.add(row.personIndex);
+  }
+  if (state.selectedAncestorIndex !== null) {
+    chosen.add(state.selectedAncestorIndex);
   }
 
   const nodeSet = new Set(chosen);
@@ -492,6 +772,9 @@ function renderDetail() {
   const matchedMask = state.peopleMasks[state.selectedNodeIndex] & activeMask;
   const matchedFaculty = selectedFaculty.filter((index) => matchedMask & (1n << BigInt(index)));
   const facultyRecord = state.faculty.find((faculty) => Number(faculty.person_index) === state.selectedNodeIndex);
+  const facultyWebsite = facultyRecord ? facultyWebsiteUrl(facultyRecord) : "";
+  const facultyOsuProfile = facultyRecord ? facultyOsuProfileUrl(facultyRecord) : "";
+  const professionalWebsite = facultyRecord?.professional_website_url || "";
   const advisorNames = person.advisor_indices
     .map((index) => state.people[index]?.name)
     .filter(Boolean)
@@ -503,7 +786,8 @@ function renderDetail() {
     <div><strong>Degree:</strong> ${escapeHtml([person.year, person.country].filter(Boolean).join(", ") || "not listed")}</div>
     ${advisorNames ? `<div><strong>Advisor:</strong> ${escapeHtml(advisorNames)}</div>` : ""}
     <div><strong>Faculty sharing this ancestor:</strong> ${matchedFaculty.length}</div>
-    ${facultyRecord ? `<div><strong>OSU profile:</strong> <a href="${facultyRecord.profile_url}" target="_blank" rel="noreferrer">${escapeHtml(facultyRecord.osu_name)}</a></div>` : ""}
+    ${facultyRecord && facultyWebsite ? `<div><strong>Website:</strong> <a href="${escapeHtml(facultyWebsite)}" target="_blank" rel="noreferrer">${escapeHtml(facultyWebsiteLabel(facultyRecord))}</a></div>` : ""}
+    ${facultyRecord && professionalWebsite && facultyOsuProfile ? `<div><strong>OSU profile:</strong> <a href="${escapeHtml(facultyOsuProfile)}" target="_blank" rel="noreferrer">${escapeHtml(facultyRecord.osu_name)}</a></div>` : ""}
     <div class="tag-row">
       ${matchedFaculty.slice(0, 14).map((index) => `<span class="tag">${escapeHtml(state.faculty[index].osu_name)}</span>`).join("")}
     </div>
@@ -695,9 +979,9 @@ function drawYearAxis() {
   const step = 100;
   const start = Math.ceil(state.yearRange.min / step) * step;
   ctx.lineWidth = 1 / state.view.scale;
-  ctx.strokeStyle = "rgba(102, 106, 112, 0.18)";
-  ctx.fillStyle = "#666a70";
-  ctx.font = `${11 / state.view.scale}px system-ui, sans-serif`;
+  ctx.strokeStyle = "rgba(100, 106, 110, 0.18)";
+  ctx.fillStyle = OSU_COLORS.grayDark40;
+  ctx.font = `${11 / state.view.scale}px ${CANVAS_FONT}`;
   ctx.textAlign = "right";
   ctx.textBaseline = "middle";
   for (let year = start; year <= state.yearRange.max; year += step) {
@@ -716,7 +1000,7 @@ function measureScreenLabelBox(lines, options = {}) {
   const lineHeight = fontSize * 1.18;
   const paddingX = 6;
   const paddingY = 5;
-  ctx.font = `${options.weight || 650} ${fontSize}px system-ui, sans-serif`;
+  ctx.font = `${options.weight || 600} ${fontSize}px ${CANVAS_FONT}`;
   return {
     width: Math.max(...lines.map((line) => ctx.measureText(line).width), 1) + 2 * paddingX,
     height: lines.length * lineHeight + 2 * paddingY,
@@ -729,15 +1013,15 @@ function measureScreenLabelBox(lines, options = {}) {
 
 function drawScreenLabelBox(lines, left, top, measured, options = {}) {
   ctx.fillStyle = options.background || "rgba(255, 255, 255, 0.92)";
-  ctx.strokeStyle = options.border || "rgba(217, 221, 227, 0.98)";
+  ctx.strokeStyle = options.border || "rgba(207, 212, 216, 0.98)";
   ctx.lineWidth = 1;
   ctx.beginPath();
   ctx.roundRect(left, top, measured.width, measured.height, 6);
   ctx.fill();
   ctx.stroke();
 
-  ctx.font = `${options.weight || 650} ${measured.fontSize}px system-ui, sans-serif`;
-  ctx.fillStyle = options.color || "#202124";
+  ctx.font = `${options.weight || 600} ${measured.fontSize}px ${CANVAS_FONT}`;
+  ctx.fillStyle = options.color || OSU_COLORS.grayDark80;
   ctx.textAlign = "left";
   ctx.textBaseline = "top";
   lines.forEach((line, index) => {
@@ -768,7 +1052,7 @@ function drawOverview(graphData, displayWidth, displayHeight) {
   }
 
   overviewCtx.lineWidth = 0.8;
-  overviewCtx.strokeStyle = "rgba(59, 63, 69, 0.18)";
+  overviewCtx.strokeStyle = "rgba(100, 106, 110, 0.18)";
   graphData.edges.forEach(([advisorIndex, studentIndex]) => {
     const advisor = state.nodePositions.get(advisorIndex);
     const student = state.nodePositions.get(studentIndex);
@@ -798,10 +1082,10 @@ function drawOverview(graphData, displayWidth, displayHeight) {
     overviewCtx.beginPath();
     overviewCtx.arc(overview.x, overview.y, radius, 0, Math.PI * 2);
     overviewCtx.fillStyle = isFaculty
-      ? "#1b6f78"
+      ? OSU_COLORS.scarlet
       : rank !== undefined && rank < 20
-        ? "#b68019"
-        : "#4e7b58";
+        ? OSU_COLORS.grayDark40
+        : OSU_COLORS.grayDark20;
     overviewCtx.fill();
   });
 
@@ -813,15 +1097,15 @@ function drawOverview(graphData, displayWidth, displayHeight) {
   const rectTop = viewTop * scale + offsetY;
   const rectWidth = Math.max(5, (viewRight - viewLeft) * scale);
   const rectHeight = Math.max(5, (viewBottom - viewTop) * scale);
-  overviewCtx.fillStyle = "rgba(187, 0, 0, 0.08)";
-  overviewCtx.strokeStyle = "rgba(187, 0, 0, 0.74)";
+  overviewCtx.fillStyle = "rgba(186, 12, 47, 0.08)";
+  overviewCtx.strokeStyle = "rgba(186, 12, 47, 0.74)";
   overviewCtx.lineWidth = 1.4;
   overviewCtx.beginPath();
   overviewCtx.rect(rectLeft, rectTop, rectWidth, rectHeight);
   overviewCtx.fill();
   overviewCtx.stroke();
 
-  overviewCtx.strokeStyle = "rgba(217, 221, 227, 0.95)";
+  overviewCtx.strokeStyle = "rgba(207, 212, 216, 0.95)";
   overviewCtx.lineWidth = 1;
   overviewCtx.strokeRect(0.5, 0.5, overviewWidth - 1, overviewHeight - 1);
 }
@@ -869,7 +1153,7 @@ function drawGraphLabels(graphData, displayWidth, displayHeight) {
       return;
     }
     const lines = wrapWords(state.people[row.personIndex].name, 17, 2);
-    const measured = measureScreenLabelBox(lines, { fontSize: 10.5, weight: 650 });
+    const measured = measureScreenLabelBox(lines, { fontSize: 10.5, weight: 600 });
     labels.push({ personIndex: row.personIndex, anchor, lines, measured, kind: "ancestor" });
   });
 
@@ -934,7 +1218,7 @@ function drawGraphLabels(graphData, displayWidth, displayHeight) {
 
   ctx.save();
   ctx.lineWidth = 1;
-  ctx.strokeStyle = "rgba(27, 111, 120, 0.28)";
+  ctx.strokeStyle = "rgba(186, 12, 47, 0.26)";
   placements.forEach((label) => {
     const targetX = label.left + label.measured.width / 2;
     const targetY = label.below ? label.top : label.top + label.measured.height;
@@ -949,10 +1233,10 @@ function drawGraphLabels(graphData, displayWidth, displayHeight) {
     const hovered = state.hoveredNodeIndex === label.personIndex;
     const faculty = label.kind === "faculty";
     drawScreenLabelBox(label.lines, label.left, label.top, label.measured, {
-      color: selected || hovered ? "#8f1111" : faculty ? "#1b4f57" : "#5d4410",
-      border: selected || hovered ? "rgba(187, 0, 0, 0.65)" : faculty ? "rgba(170, 192, 197, 0.95)" : "rgba(214, 184, 121, 0.95)",
-      background: selected || hovered ? "rgba(255, 245, 244, 0.96)" : "rgba(255, 255, 255, 0.94)",
-      weight: selected || hovered ? 760 : faculty ? 700 : 650,
+      color: selected || hovered ? OSU_COLORS.scarletDark40 : faculty ? OSU_COLORS.scarletDark60 : OSU_COLORS.grayDark80,
+      border: selected || hovered ? "rgba(186, 12, 47, 0.72)" : faculty ? "rgba(186, 12, 47, 0.45)" : "rgba(167, 177, 183, 0.9)",
+      background: selected || hovered ? "rgba(246, 247, 248, 0.98)" : "rgba(255, 255, 255, 0.94)",
+      weight: selected || hovered ? 800 : faculty ? 700 : 600,
     });
   });
   ctx.restore();
@@ -974,7 +1258,7 @@ function drawGraph(graphData = visibleGraph()) {
     state.pendingCenterNodeIndex = null;
   }
 
-  ctx.fillStyle = "#fbfcfe";
+  ctx.fillStyle = OSU_COLORS.grayLight90;
   ctx.fillRect(0, 0, displayWidth, displayHeight);
 
   ctx.save();
@@ -983,7 +1267,7 @@ function drawGraph(graphData = visibleGraph()) {
   drawYearAxis();
 
   ctx.lineWidth = 1 / state.view.scale;
-  ctx.strokeStyle = "rgba(59, 63, 69, 0.18)";
+  ctx.strokeStyle = "rgba(100, 106, 110, 0.18)";
   graphData.edges.forEach(([advisorIndex, studentIndex]) => {
     const advisor = state.nodePositions.get(advisorIndex);
     const student = state.nodePositions.get(studentIndex);
@@ -1014,17 +1298,17 @@ function drawGraph(graphData = visibleGraph()) {
     ctx.beginPath();
     ctx.arc(point.x, point.y, radius, 0, Math.PI * 2);
     ctx.fillStyle = selected
-      ? "#bb0000"
+      ? OSU_COLORS.scarletDark40
       : hovered
-        ? "#8f1111"
+        ? OSU_COLORS.scarletDark60
         : isFaculty
-          ? "#1b6f78"
+          ? OSU_COLORS.scarlet
           : rank !== undefined && rank < 20
-            ? "#b68019"
-            : "#4e7b58";
+            ? OSU_COLORS.grayDark40
+            : OSU_COLORS.grayDark20;
     ctx.fill();
     ctx.lineWidth = (selected || hovered ? 3 : 1.4) / state.view.scale;
-    ctx.strokeStyle = "#ffffff";
+    ctx.strokeStyle = OSU_COLORS.white;
     ctx.stroke();
   });
 
@@ -1039,6 +1323,7 @@ function render() {
   }
   renderSources();
   renderGroups();
+  renderAncestorTool();
   renderFaculty();
   renderRange();
   const graphData = visibleGraph();
@@ -1185,18 +1470,88 @@ function handleOverviewPointerDown(event) {
   drawGraph();
 }
 
+function setAreaMenuOpen(isOpen) {
+  if (state.areaMenuOpen === isOpen) {
+    return;
+  }
+  state.areaMenuOpen = isOpen;
+  renderGroups();
+}
+
+els.areaMenuButton.addEventListener("click", () => {
+  setAreaMenuOpen(!state.areaMenuOpen);
+});
+
+els.areaMenuButton.addEventListener("keydown", (event) => {
+  if (event.key === "ArrowDown" || event.key === "Enter" || event.key === " ") {
+    event.preventDefault();
+    setAreaMenuOpen(true);
+    els.areaMenuList.querySelector("button")?.focus();
+  }
+});
+
+els.areaMenuList.addEventListener("keydown", (event) => {
+  const options = Array.from(els.areaMenuList.querySelectorAll("button"));
+  const currentIndex = options.indexOf(document.activeElement);
+  if (event.key === "Escape") {
+    event.preventDefault();
+    setAreaMenuOpen(false);
+    els.areaMenuButton.focus();
+    return;
+  }
+  if (event.key !== "ArrowDown" && event.key !== "ArrowUp") {
+    return;
+  }
+  event.preventDefault();
+  const direction = event.key === "ArrowDown" ? 1 : -1;
+  const nextIndex = currentIndex < 0
+    ? 0
+    : (currentIndex + direction + options.length) % options.length;
+  options[nextIndex]?.focus();
+});
+
+document.addEventListener("click", (event) => {
+  if (state.areaMenuOpen && !els.areaMenu.contains(event.target)) {
+    setAreaMenuOpen(false);
+  }
+});
+
+els.ancestorSearch.addEventListener("input", () => {
+  state.ancestorQuery = els.ancestorSearch.value;
+  state.selectedAncestorIndex = null;
+  renderAncestorTool();
+});
+
+els.ancestorSearch.addEventListener("keydown", (event) => {
+  if (event.key !== "Enter") {
+    return;
+  }
+  const first = ancestorSuggestionRows()[0];
+  if (!first) {
+    return;
+  }
+  event.preventDefault();
+  applyAncestorPerson(first.personIndex);
+});
+
+els.clearAncestor.addEventListener("click", () => {
+  clearAncestorFilter();
+});
+
 els.facultySearch.addEventListener("input", () => {
   state.facultySearch = els.facultySearch.value;
   renderFaculty();
 });
 
 els.selectAllFaculty.addEventListener("click", () => {
+  state.selectedAncestorIndex = null;
   state.selectedFaculty = new Set(groupFacultyIndices());
   markGraphChanged("width");
   render();
 });
 
 els.clearFaculty.addEventListener("click", () => {
+  state.selectedAncestorIndex = null;
   state.selectedFaculty = new Set();
   markGraphChanged("width");
   render();

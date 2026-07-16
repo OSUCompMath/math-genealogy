@@ -39,7 +39,9 @@ ROSTER_COLUMNS = [
 
 AREA_COLUMNS = [
     "osu_name",
-    "profile_url",
+    "osu_profile_url",
+    "professional_website_url",
+    "website_url",
     "title",
     "filed_in",
     "expertise",
@@ -63,7 +65,9 @@ class FacultyRecord:
 @dataclass
 class FacultyAreaRecord:
     osu_name: str
-    profile_url: str
+    osu_profile_url: str
+    professional_website_url: str
+    website_url: str
     title: str
     filed_in: list[str]
     expertise: list[str]
@@ -117,22 +121,34 @@ def read_faculty_areas(path: Path) -> dict[str, FacultyAreaRecord]:
         return {}
 
     areas: dict[str, FacultyAreaRecord] = {}
+    columns = AREA_COLUMNS
     with path.open(encoding="utf-8") as f:
         for line_number, line in enumerate(f, start=1):
             line = line.rstrip("\n")
-            if not line or line.startswith("#"):
+            if not line:
+                continue
+            if line.startswith("# Columns:"):
+                columns = [part.strip() for part in line.partition(":")[2].split("\t")]
+                continue
+            if line.startswith("#"):
                 continue
 
             parts = line.split("\t")
-            if len(parts) < len(AREA_COLUMNS):
-                parts.extend([""] * (len(AREA_COLUMNS) - len(parts)))
-            if len(parts) > len(AREA_COLUMNS):
+            if len(parts) < len(columns):
+                parts.extend([""] * (len(columns) - len(parts)))
+            if len(parts) > len(columns):
                 raise ValueError(f"{path}:{line_number}: too many tab-separated columns")
 
-            raw = dict(zip(AREA_COLUMNS, parts, strict=True))
+            raw = dict(zip(columns, parts, strict=True))
+            if "osu_profile_url" not in raw and raw.get("profile_url"):
+                raw["osu_profile_url"] = raw["profile_url"]
+            raw.setdefault("professional_website_url", "")
+            raw.setdefault("website_url", raw.get("professional_website_url") or raw.get("osu_profile_url", ""))
             areas[raw["osu_name"]] = FacultyAreaRecord(
                 osu_name=raw["osu_name"],
-                profile_url=raw["profile_url"],
+                osu_profile_url=raw["osu_profile_url"],
+                professional_website_url=raw["professional_website_url"],
+                website_url=raw["website_url"],
                 title=raw["title"],
                 filed_in=split_list(raw["filed_in"]),
                 expertise=split_list(raw["expertise"]),
@@ -417,7 +433,10 @@ def build_static_payload(
                 **asdict(record),
                 "faculty_index": i,
                 "person_index": id_to_index.get(record.mgp_id),
-                "profile_url": area.profile_url if area else "",
+                "profile_url": area.osu_profile_url if area else "",
+                "osu_profile_url": area.osu_profile_url if area else "",
+                "professional_website_url": area.professional_website_url if area else "",
+                "website_url": area.website_url if area else "",
                 "title": area.title if area else "",
                 "filed_in": area.filed_in if area else [],
                 "expertise": area.expertise if area else [],
@@ -436,7 +455,10 @@ def build_static_payload(
         unresolved_payload.append(
             {
                 **asdict(record),
-                "profile_url": area.profile_url if area else "",
+                "profile_url": area.osu_profile_url if area else "",
+                "osu_profile_url": area.osu_profile_url if area else "",
+                "professional_website_url": area.professional_website_url if area else "",
+                "website_url": area.website_url if area else "",
                 "title": area.title if area else "",
                 "filed_in": area.filed_in if area else [],
                 "expertise": area.expertise if area else [],
