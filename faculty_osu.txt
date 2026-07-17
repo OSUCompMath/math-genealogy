@@ -1,0 +1,94 @@
+# Ohio State Mathematics faculty MGP roster
+# OSU faculty source: https://math.osu.edu/people
+# MGP source: https://www.genealogy.math.ndsu.nodak.edu/
+# Generated: 2026-07-13
+#
+# Scope: Chair, Faculty and Faculty sections only. Postdocs & Visitors are excluded.
+#
+# Columns:
+# osu_name	mgp_id	mgp_name	mgp_degree_school	mgp_degree_year	osu_phd_from_profile	verification_status	note
+
+Matthew Kahle	113092	Kahle, Matthew	University of Washington	2007	PhD: University of Washington (2007)	checked	
+David Anderson	144175	Anderson, David	University of Michigan	2009	PhD: University of Michigan (2009)	checked	
+Vitaly Bergelson	11331	Bergelson, Vitaly	Hebrew University of Jerusalem	1984	PhD: Hebrew University of Jerusalem (1984)	checked	
+Janet Best	22980	Best, Janet	Cornell University	2004	PhD: Cornell University (2004)	checked	
+Nathan Broaddus	33047	Broaddus, Nathan	Columbia University	2003	PhD: Columbia University (2003)	checked	
+Kaifeng Bu	293938	Bu, Kaifeng	Zhejiang University	2019	PhD: Zhejiang University (2019)	checked	
+Mirel Caibar	83029	Caibar, Mirel	University of Warwick	1999	PhD: University of Warwick (1999)	checked	
+Sergei Chmutov	52911	Chmutov, Sergei	Lomonosov Moscow State University	1985	PhD: Moscow State University (1985)	checked	OSU uses the shorter school name.
+Micah Chrisman	145928	Chrisman, Micah	University of Hawaii at Manoa	2006	not listed on OSU profile	osu phd not listed	
+Ovidiu Costin	6276	Costin, Ovidiu	Rutgers University, New Brunswick	1995	PhD: Rutgers University (1995)	checked	
+Rodica Costin	86748	Costin, Rodica	Rutgers University, New Brunswick	1997	PhD: Rutgers University (1997)	checked	
+Cesar Cuenca	251236	Cuenca, Cesar	Massachusetts Institute of Technology	2019	not listed on OSU profile	osu phd not listed	
+Angelica Cueto	149614	Cueto, Maria Angelica	University of California, Berkeley	2010	not listed on OSU profile	osu phd not listed	MGP lists her as Maria Angelica Cueto.
+Adriana Dawes	345875	Dawes, Adriana	University of British Columbia	2006	PhD: University of British Columbia (2006)	checked	
+Andrzej Derdzinski	115184	Derdzinski, Andrzej	Uniwersytet Wroclawski	1976	PhD: Uniwersytet Wroclawski (1976)	checked	
+Marjorie Drake	345876	Drake, Marjorie	University of Texas at Austin	2021	not listed on OSU profile	osu phd not listed	
+Neil Falkner	17642	Falkner, Neil	University of British Columbia	1978	PhD: University of British Columbia (1978)	checked	
+James (Jim) Fowler	139744	Fowler, James	The University of Chicago	2009	PhD: University of Chicago (2009)	checked	
+Sachin Gautam	154782	Gautam, Sachin	Northeastern University	2011	PhD: Northeastern University (2011)	checked	
+Andrey Gogolyev	188830	Gogolev, Andrey	The Pennsylvania State University	2009	not listed on OSU profile	osu phd not listed	MGP spells surname as Gogolev.
+Dusty Grundmeier	155846	Grundmeier, Dusty	University of Illinois at Urbana-Champaign	2011	not listed on OSU profile	osu phd not listed	
+Bo Guan	39040	Guan, Bo	University of Massachusetts Amherst	1992	PhD: University of Massachusetts (1992)	checked	MGP specifies Amherst.
+Maria Han Veiga	259364	Han Veiga, Maria	Universitat Zurich	2020	not listed on OSU profile	osu phd not listed	
+John Harper	134061	Harper, John	University of Notre Dame	2008	PhD: University of Notre Dame (2008)	checked	
+Jimmy He	275511	He, Jimmy	Stanford University	2021	PhD: Stanford University (2021)	checked	
+Ivo Herzog	3070	Herzog, Ivo	University of Notre Dame	1989	PhD: University of Notre Dame (1989)	checked	
+Ghaith Hiary	141925	Hiary, Ghaith	University of Minnesota - Twin Cities	2008	PhD: University of Minnesota (2008)	checked	MGP specifies Twin Cities.
+John Holmes	203700	Holmes, John	University of Notre Dame	2015	not listed on OSU profile	osu phd not listed	
+Roman Holowinsky	104219	Holowinsky, Roman	Rutgers University, New Brunswick	2006	PhD: Rutgers University (2006)	checked	
+Jingyin Huang	223192	Huang, Jingyin	New York University	2015	PhD: New York University (2015)	checked	
+Zhenzhen Huang	325699	Huang, Zhenzhen	University of Waterloo	2024	not listed on OSU profile	osu phd not listed	
+Yifan Jing	277474	Jing, Yifan	University of Illinois at Urbana-Champaign	2021	not listed on OSU profile	osu phd not listed	
+John Johnson	157668	Johnson, John	Howard University	2011	PhD: Howard University (2011)	checked	
+Niles Johnson	137838	Johnson, Niles	The University of Chicago	2009	PhD: University of Chicago (2009)	checked	Verified from OSU Earthworks page: https://earthworks.osu.edu/people/njohnson
+Roy Joshua	13053	Joshua, Roy	Northwestern University	1983	Ph.D. Northwestern University (1983)	checked	
+Eric Katz	85162	Katz, Eric	Stanford University	2004	PhD: Stanford University (2004)	checked	
+Thomas Kerler	165663	Kerler, Thomas	ETH Zurich	1992	PhD: ETH-Zurich - Theoretical Physics (1992)	checked	
+Kenneth Koenig	47876	Koenig, Kenneth	Princeton University	2000	PhD: Princeton University (2000)	checked	
+Kenneth Ng	316946	Ng, Tsz Hin Kenneth	University of Illinois at Urbana-Champaign	2024	PhD: The University of Illinois Urbana-Champaign (2024)	checked	MGP lists full given name as Tsz Hin Kenneth Ng.
+Sanjeevi Krishnan	100253	Krishnan, Sanjeevi	The University of Chicago	2006	not listed on OSU profile	osu phd not listed	
+Jean-Francois Lafont	62273	Lafont, Jean-Francois	University of Michigan	2002	PhD: University of Michigan (2002)	checked	
+King-Yeung (Adrian) Lam	153112	Lam, King-Yeung	University of Minnesota - Twin Cities	2011	PhD: University of Minnesota; profile prose says Twin Cities, 2011	checked	
+Jan Lang	170700	Lang, Jan	Charles University	1996	PhD: Charles University, Prague (1996)	checked	
+Wonjun Lee	291382	Lee, Wonjun	University of California, Los Angeles	2022	PhD: University of California, Los Angeles (2022)	checked	
+Sasha Leibman	103038	Leibman, Alexandr	Technion-Israel Institute of Technology	1995	PhD: Israel Institute of Technology (1995)	checked	MGP lists him as Alexandr Leibman.
+Michael Lipnowski	187384	Lipnowski, Michael	Stanford University	2013	not listed on OSU profile	osu phd not listed	
+Beibei Liu	260100	Liu, Beibei	University of California, Davis	2019	not listed on OSU profile	osu phd not listed	
+Wenzhi Luo	6239	Luo, Wenzhi	Rutgers University, New Brunswick	1993	Ph.D. Rutgers University (1993)	checked	
+John Maharry	10536	Maharry, John	The Ohio State University	1996	PhD: The Ohio State University (1996)	checked	
+Chris Miller	4887	Miller, Christopher	University of Illinois at Urbana-Champaign	1994	PhD: University of Illinois at Urbana-Champaign, 1994	checked	
+Dustin Mixon	163907	Mixon, Dustin	Princeton University	2012	PhD: Princeton University (2012)	checked	
+Hoi Nguyen	153775	Nguyen, Hoi	Rutgers University, New Brunswick	2010	PhD: Rutgers University (2010)	checked	
+Thomas O'Leary-Roseberry	345877	O'Leary-Roseberry, Thomas	University of Texas at Austin	2020	not listed on OSU profile	osu phd not listed	
+Crichton Ogle	36794	Ogle, Crichton	Brandeis University	1984	PhD: Brandeis University (1984)	checked	
+Jennifer Park	204380	Park, Jennifer	Massachusetts Institute of Technology	2014	not listed on OSU profile	osu phd not listed	
+Stefan Patrikis	201157	Patrikis, Stefan	Princeton University	2012	not listed on OSU profile	osu phd not listed	
+David Penneys	171279	Penneys, David	University of California, Berkeley	2012	PhD: University of California, Berkeley (2012)	checked	
+Grzegorz Rempala	1589	Rempala, Grzegorz	Bowling Green State University	1996	not listed on OSU profile	osu phd not listed	MGP spells surname as Rempala/Rempala with Polish diacritic on page.
+Cosmin Roman	89480	Roman, Cosmin	The Ohio State University	2004	PhD: The Ohio State University (2004)	checked	
+Nimish Shah	151738	Shah, Nimish	Tata Institute of Fundamental Research	1994	PhD: Tata Institute (1994)	checked	MGP gives the full institute name.
+David Sivakoff	172440	Sivakoff, David	University of California, Davis	2010	PhD: Applied Mathematics, University of California- Davis (2010)	checked	
+Aurel Stan	47085	Stan, Aurel	Louisiana State University	1999	PhD: Louisiana State University (1999)	checked	
+Matthew Stenzel	59212	Stenzel, Mathew	Massachusetts Institute of Technology	1990	PhD: Massachusetts Institute of Technology (1990)	checked	MGP spells first name as Mathew.
+Saleh Tanveer	11855	Tanveer, Saleh	California Institute of Technology	1984	PhD: California Institute of Technology (1984)	checked	OSU page has a typo in Institute.
+Krystal Taylor	164389	Taylor, Krystal	University of Rochester	2012	not listed on OSU profile	osu phd not listed	
+Daniel Thompson	150530	Thompson, Daniel	University of Warwick	2009	PhD: University of Warwick (2009)	checked	
+Fei-Ran Tian	33699	Tian, Feiran	New York University	1991	PhD: Courant Institute, New York University (1991)	checked	MGP lists first name as Feiran.
+Joseph Tien	144025	Tien, Joseph	Cornell University	2007	PhD: Cornell University (2007)	checked	
+Feride Tiglay	87003	Tiglay, Feride	University of Notre Dame	2004	OSU profile says Ph.D. from University of Notre Dame; year not listed	osu phd year not listed	
+Hsian-Hua Tseng	93517	Tseng, Hsian-Hua	University of California, Berkeley	2005	Ph.D. University of California at Berkeley (2005)	checked	
+Liz Vivas	345903	Vivas, Liz	University of Michigan	2009	PhD: University of Michigan (2009)	checked	
+Yulong Xing	98558	Xing, Yulong	Brown University	2006	PhD: Brown University (2006)	checked	
+Dongbin Xiu	92079	Xiu, Dongbin	Brown University	2004	PhD-Applied Mathematics: Brown University (2004)	checked	
+Zhuolun Yang	273037	Yang, Zhuolun	Rutgers University, New Brunswick	2021	PhD: Rutgers University (2021)	checked	
+Donald Yau	61519	Yau, Donald	Massachusetts Institute of Technology	2002	PhD: Massachusetts Institute of Technology (2002)	checked	
+Anna Yesypenko	345879	Yesypenko, Anna	University of Texas at Austin	2023	The University of Texas at Austin, 2023	checked	
+Mohamed Yousif	170146	Yousif, M. F.	University of Calgary	1986	1986: The University of Calgary, Calgary, Alberta.	checked	MGP lists him as M. F. Yousif.
+Linfeng Zhang	345881	Zhang, Linfeng	University of Illinois at Urbana-Champaign	2023	not listed on OSU profile	osu phd not listed	
+Scott Zimmerman	219890	Zimmerman, Scott	University of Pittsburgh	2017	not listed on OSU profile	osu phd not listed	
+
+# Missing or unresolved regular faculty MGP IDs
+# Columns:
+# osu_name	mgp_id	mgp_name	mgp_degree_school	mgp_degree_year	osu_phd_from_profile	verification_status	note
+Ian Hamilton	MISSING				PhD: Simon Fraser University - Biology (2002)	missing	No matching MGP record found.

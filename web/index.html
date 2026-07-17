@@ -1,0 +1,186 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Ohio State Math Faculty Genealogy</title>
+    <link rel="stylesheet" href="https://assets.bux.osu.edu/bux-webfonts2/bux-webfonts2.css">
+    <link rel="stylesheet" href="styles.css?v=20260717-final-polish-5">
+  </head>
+  <body>
+    <div class="app-shell">
+      <header class="topbar">
+        <div>
+          <p class="eyebrow">Ohio State Mathematics</p>
+          <h1>Math Faculty Genealogy</h1>
+        </div>
+        <div class="top-actions">
+          <div class="source-row" id="sourceRow"></div>
+        </div>
+        <nav class="view-tabs" aria-label="Application views">
+          <button type="button" data-view="faculty" aria-pressed="false">Faculty</button>
+          <button type="button" data-view="graph" aria-pressed="true">Graph</button>
+        </nav>
+      </header>
+
+      <aside class="sidebar" aria-label="Graph controls">
+        <section class="panel">
+          <div class="panel-heading">
+            <h2>Areas</h2>
+          </div>
+          <label class="field-label area-label" id="areaMenuLabel">Area</label>
+          <div class="area-menu" id="areaMenu">
+            <button
+              type="button"
+              class="area-menu-button"
+              id="areaMenuButton"
+              aria-haspopup="listbox"
+              aria-expanded="false"
+              aria-labelledby="areaMenuLabel areaMenuCurrent"
+            >
+              <span class="area-menu-current" id="areaMenuCurrent">All Faculty</span>
+              <span class="area-menu-count" id="areaMenuCount"></span>
+            </button>
+            <div class="area-menu-list" id="areaMenuList" role="listbox" aria-labelledby="areaMenuLabel" hidden></div>
+          </div>
+          <div class="area-summary" id="areaSummary"></div>
+        </section>
+
+        <section class="panel faculty-panel">
+          <div class="panel-heading">
+            <h2>Faculty</h2>
+            <div class="mini-actions">
+              <button type="button" id="selectAllFaculty">All</button>
+              <button type="button" id="clearFaculty">Clear</button>
+            </div>
+          </div>
+          <label class="field-label" for="facultySearch">Search</label>
+          <input id="facultySearch" class="search-input" type="search" autocomplete="off" placeholder="Search all faculty">
+          <div class="faculty-list" id="facultyList"></div>
+        </section>
+      </aside>
+
+      <main class="workspace">
+        <section class="metrics" id="metrics"></section>
+
+        <section class="graph-panel">
+          <div class="graph-toolbar">
+            <div>
+              <h2 id="graphTitle">Ancestry Graph</h2>
+              <p id="graphSubtitle"></p>
+            </div>
+            <details class="graph-controls-panel" id="graphControlsPanel">
+              <summary>
+                <span>
+                  <strong>Graph controls</strong>
+                  <small>zoom, views, and ancestor limits</small>
+                </span>
+                <span class="summary-toggle">Controls</span>
+              </summary>
+              <div class="graph-control-stack">
+                <label class="range-control" for="minShared">
+                  <span>Shared by at least <strong id="minSharedLabel">2</strong></span>
+                  <input id="minShared" type="range" min="1" max="2" value="2">
+                </label>
+                <label class="range-control" for="visibleLimit">
+                  <span>Ancestors shown <strong id="visibleLimitLabel">60</strong></span>
+                  <input id="visibleLimit" type="range" min="25" max="220" step="5" value="60">
+                </label>
+                <div class="zoom-controls" aria-label="Graph view controls">
+                  <button type="button" id="zoomOut" aria-label="Zoom out" title="Zoom out">-</button>
+                  <button type="button" id="zoomIn" aria-label="Zoom in" title="Zoom in">+</button>
+                  <button type="button" id="fitGraph" aria-label="Fit graph width" title="Fit graph width">Width</button>
+                  <button type="button" id="fitAllGraph" aria-label="Fit full graph" title="Fit full graph">Full</button>
+                  <button type="button" id="focusFaculty" aria-label="Focus selected faculty" title="Focus selected faculty">Faculty</button>
+                  <button type="button" id="focusSelectedPaths" aria-label="Show advisor paths for selected node" title="Show advisor paths for selected node">Paths</button>
+                  <button type="button" id="resetGraph" aria-label="Reset graph view" title="Reset graph view">Reset</button>
+                </div>
+                <p class="range-help">The first slider only uses values that still have results. Ancestors shown controls how many top shared ancestors are drawn.</p>
+                <p class="graph-help">Drag the graph to pan. Use the zoom buttons, or hold Ctrl/Command while scrolling to zoom.</p>
+                <div class="focus-controls" aria-label="Graph focus modes">
+                  <button type="button" data-focus-mode="common" aria-pressed="true">Shared</button>
+                  <button type="button" data-focus-mode="faculty" aria-pressed="false">Selected</button>
+                  <button type="button" data-focus-mode="descendants" aria-pressed="false">Show Descendants</button>
+                  <button type="button" data-focus-mode="path" aria-pressed="false">Advisor Paths</button>
+                </div>
+              </div>
+            </details>
+          </div>
+          <div class="graph-navigation">
+            <div class="graph-breadcrumbs" id="graphBreadcrumbs" aria-label="Current graph choices"></div>
+            <div class="graph-search">
+              <label class="visually-hidden" for="graphSearch">Find faculty or ancestor in graph</label>
+              <input id="graphSearch" class="search-input" type="search" autocomplete="off" placeholder="Find faculty or ancestor">
+              <div class="graph-ancestor-presets" id="graphAncestorPresets" aria-label="Suggested ancestors"></div>
+              <div class="graph-search-results" id="graphSearchResults"></div>
+            </div>
+          </div>
+          <div class="current-view-bar" id="currentViewSummary"></div>
+          <div class="selection-chips" id="selectionChips" hidden></div>
+          <div class="canvas-wrap">
+            <div id="loadingState" class="loading-state" role="status">Loading genealogy data</div>
+            <canvas id="graphCanvas" width="1200" height="620"></canvas>
+            <canvas id="overviewCanvas" class="overview-canvas" width="210" height="140" aria-label="Graph overview"></canvas>
+            <div id="graphTooltip" class="graph-tooltip" hidden></div>
+            <div id="graphSelectionCard" class="graph-selection-card" hidden></div>
+            <div class="graph-legend" aria-label="Graph legend">
+              <span><i class="legend-dot faculty-dot"></i>Faculty</span>
+              <span><i class="legend-dot ancestor-dot"></i>Ancestor</span>
+              <span><i class="legend-line"></i>Advisor path</span>
+            </div>
+          </div>
+
+          <details id="sharedAncestorsPanel" class="table-panel shared-ancestor-panel graph-shared-panel">
+            <summary>
+              <span>
+                <strong>Shared Ancestors</strong>
+                <small id="sharedAncestorsSummary">Ancestors shared by the selected faculty</small>
+              </span>
+              <span class="summary-toggle">Table</span>
+            </summary>
+            <p class="table-note">
+              Rows are ordered by how many selected faculty share the ancestor, then by shorter advisor paths. Longest path is the farthest advisor chain from this ancestor to a shown faculty member. Total links adds those advisor links across the shown faculty. A ~ year is an estimated graph placement.
+            </p>
+            <div class="table-wrap">
+              <table>
+                <thead>
+                  <tr>
+                    <th>Name</th>
+                    <th>Year</th>
+                    <th>Country</th>
+                    <th title="Number of shown faculty whose ancestry contains this ancestor">Faculty<br>Shown</th>
+                    <th title="Longest advisor path from this ancestor to any shown faculty member">Longest<br>Path</th>
+                    <th title="Total advisor links from this ancestor to all shown faculty">Total<br>Links</th>
+                  </tr>
+                </thead>
+                <tbody id="ancestorRows"></tbody>
+              </table>
+            </div>
+          </details>
+        </section>
+
+        <section class="detail-drawer" aria-label="Selection details">
+          <div class="panel detail-panel">
+            <div class="panel-heading">
+              <h2>Details</h2>
+              <div class="detail-actions">
+                <button type="button" id="backToGroupView">Group view</button>
+                <button type="button" id="clearSelectedNode">Clear node</button>
+                <button type="button" id="closeDetailsSheet" class="mobile-detail-close" aria-label="Close details">Close</button>
+              </div>
+            </div>
+            <div id="summaryPanel" class="summary-panel"></div>
+            <div id="relationshipPanel" class="relationship-panel"></div>
+            <div id="nodeDetail" class="node-detail"></div>
+            <div id="chainPanel" class="chain-panel"></div>
+          </div>
+        </section>
+        <button type="button" id="detailBackdrop" class="detail-backdrop" aria-label="Close details" hidden></button>
+
+        <footer id="dataFootnote" class="data-footnote"></footer>
+      </main>
+    </div>
+
+    <script src="app.js?v=20260717-final-polish-5"></script>
+  </body>
+</html>
