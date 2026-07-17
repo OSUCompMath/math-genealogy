@@ -1,0 +1,45 @@
+name: deploy github pages
+
+on:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    runs-on: ubuntu-latest
+    steps:
+      - name: checkout
+        uses: actions/checkout@v6
+
+      - name: configure pages
+        uses: actions/configure-pages@v5
+
+      - name: prepare static site
+        run: |
+          mkdir -p _site
+          cp -R web/. _site/
+          cp -R data _site/data
+          touch _site/.nojekyll
+
+      - name: upload pages artifact
+        uses: actions/upload-pages-artifact@v4
+        with:
+          path: _site
+
+      - name: deploy to github pages
+        id: deployment
+        uses: actions/deploy-pages@v4

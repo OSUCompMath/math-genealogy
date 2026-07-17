@@ -1,4 +1,4 @@
-const DATA_URLS = ["../data/osu_mgp_graph.json", "data/osu_mgp_graph.json"];
+const DATA_URLS = ["data/osu_mgp_graph.json", "../data/osu_mgp_graph.json"];
 const DATA_VERSION = "20260717-final-polish-5";
 const DEFAULT_VISIBLE_ANCESTORS = 60;
 const MIN_SCALE = 0.15;
