@@ -1,5 +1,5 @@
 const DATA_URLS = ["data/osu_mgp_graph.json", "../data/osu_mgp_graph.json"];
-const DATA_VERSION = "20260717-final-polish-5";
+const DATA_VERSION = "20260717-final-polish-6";
 const DEFAULT_VISIBLE_ANCESTORS = 60;
 const MIN_SCALE = 0.15;
 const MAX_SCALE = 2.8;
@@ -660,8 +660,8 @@ function applyUrlState() {
   }
 
   const limit = Number(params.get("limit"));
-  if (Number.isFinite(limit) && limit >= 25) {
-    state.visibleAncestorLimit = clamp(limit, 25, 220);
+  if (Number.isFinite(limit) && limit >= 1) {
+    state.visibleAncestorLimit = Math.floor(limit);
   }
 
   const nodeId = params.get("node");
@@ -2254,6 +2254,12 @@ function renderRange() {
   els.minShared.value = String(state.minShared);
   els.minSharedLabel.textContent = String(state.minShared);
 
+  const visibleAncestorMax = Math.max(1, commonAncestors().length);
+  const visibleAncestorMin = Math.min(25, visibleAncestorMax);
+  els.visibleLimit.min = String(visibleAncestorMin);
+  els.visibleLimit.max = String(visibleAncestorMax);
+  els.visibleLimit.title = `Highest available value for this selection: ${visibleAncestorMax}`;
+  state.visibleAncestorLimit = clamp(state.visibleAncestorLimit, visibleAncestorMin, visibleAncestorMax);
   els.visibleLimit.value = String(state.visibleAncestorLimit);
   els.visibleLimitLabel.textContent = String(state.visibleAncestorLimit);
 }
