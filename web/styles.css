@@ -1135,15 +1135,33 @@ h2 {
 
 .table-wrap {
   margin-top: 12px;
-  max-height: none;
-  overflow-x: auto;
-  overflow-y: visible;
+  max-height: min(52vh, 620px);
+  overflow: auto;
+  overscroll-behavior: contain;
 }
 
 .table-note {
   margin-top: 8px;
   color: var(--muted);
   font-size: 0.82rem;
+  line-height: 1.35;
+}
+
+.table-tools {
+  display: grid;
+  grid-template-columns: minmax(180px, 320px) 1fr;
+  gap: 6px 10px;
+  align-items: end;
+}
+
+.table-tools .field-label {
+  grid-column: 1 / -1;
+  margin: 0;
+}
+
+.table-status {
+  color: var(--muted);
+  font-size: 0.78rem;
   line-height: 1.35;
 }
 
@@ -1277,6 +1295,7 @@ details:not([open]) > summary .summary-toggle::before {
 .relationship-more .relationship-paths,
 .relationship-more .relationship-actions,
 .shared-ancestor-panel .table-note,
+.shared-ancestor-panel .table-tools,
 .shared-ancestor-panel .table-wrap {
   margin-top: 10px;
 }
@@ -1839,6 +1858,10 @@ button.tag:focus-visible {
   }
 
   .metrics {
+    grid-template-columns: 1fr;
+  }
+
+  .table-tools {
     grid-template-columns: 1fr;
   }
 

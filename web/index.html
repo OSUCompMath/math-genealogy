@@ -5,7 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <title>Ohio State Math Faculty Genealogy</title>
     <link rel="stylesheet" href="https://assets.bux.osu.edu/bux-webfonts2/bux-webfonts2.css">
-    <link rel="stylesheet" href="styles.css?v=20260717-final-polish-6">
+    <link rel="stylesheet" href="styles.css?v=20260717-final-polish-9">
   </head>
   <body>
     <div class="app-shell">
@@ -141,6 +141,11 @@
             <p class="table-note">
               Rows are ordered by how many selected faculty share the ancestor, then by shorter advisor paths. Longest path is the farthest advisor chain from this ancestor to a shown faculty member. Total links adds those advisor links across the shown faculty. A ~ year is an estimated graph placement.
             </p>
+            <div class="table-tools">
+              <label class="field-label" for="ancestorTableSearch">Search table</label>
+              <input id="ancestorTableSearch" class="search-input" type="search" autocomplete="off" placeholder="Search ancestors, year, or country">
+              <span id="ancestorTableStatus" class="table-status"></span>
+            </div>
             <div class="table-wrap">
               <table>
                 <thead>
@@ -181,6 +186,6 @@
       </main>
     </div>
 
-    <script src="app.js?v=20260717-final-polish-6"></script>
+    <script src="app.js?v=20260717-final-polish-9"></script>
   </body>
 </html>

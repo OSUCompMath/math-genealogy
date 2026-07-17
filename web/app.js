@@ -1,5 +1,5 @@
 const DATA_URLS = ["data/osu_mgp_graph.json", "../data/osu_mgp_graph.json"];
-const DATA_VERSION = "20260717-final-polish-6";
+const DATA_VERSION = "20260717-final-polish-9";
 const DEFAULT_VISIBLE_ANCESTORS = 60;
 const MIN_SCALE = 0.15;
 const MAX_SCALE = 2.8;
@@ -42,6 +42,7 @@ const state = {
   graphSearchQuery: "",
   graphSearchActiveIndex: 0,
   chainPathQuery: "",
+  sharedAncestorQuery: "",
   detailSectionOpen: {},
   sharedAncestorsOpen: null,
   sharedAncestorsSelectionKind: null,
@@ -110,6 +111,8 @@ const els = {
   resetGraph: document.querySelector("#resetGraph"),
   sharedAncestorsPanel: document.querySelector("#sharedAncestorsPanel"),
   sharedAncestorsSummary: document.querySelector("#sharedAncestorsSummary"),
+  ancestorTableSearch: document.querySelector("#ancestorTableSearch"),
+  ancestorTableStatus: document.querySelector("#ancestorTableStatus"),
   dataFootnote: document.querySelector("#dataFootnote"),
   detailBackdrop: document.querySelector("#detailBackdrop"),
   backToGroupView: document.querySelector("#backToGroupView"),
@@ -196,12 +199,24 @@ function personDegreeCountry(person) {
   if (!person) {
     return "";
   }
-  return person.degree_country || (isInferredYear(person) ? "" : person.country || "");
+  return formatCountryName(person.degree_country || (isInferredYear(person) ? "" : person.country || ""));
 }
 
 function personDegreeLabel(person) {
   const parts = [personDegreeYear(person), personDegreeCountry(person)].filter(Boolean);
   return parts.join(", ");
+}
+
+function formatCountryName(value) {
+  return String(value || "").replace(/([a-z])([A-Z])/g, "$1 $2");
+}
+
+function facultyPhdSourceDetail(faculty) {
+  const profileText = String(faculty?.osu_phd_from_profile || "").trim();
+  if (!profileText || /^not listed\b/i.test(profileText)) {
+    return "from genealogy record";
+  }
+  return profileText;
 }
 
 function graphYearLabel(person) {
@@ -928,7 +943,7 @@ function graphSearchRows() {
       return;
     }
     const haystack = normalizeSearchText(
-      `${person.name} ${person.degree_year || ""} ${person.year} ${person.year_kind || ""} ${person.degree_country || ""} ${person.country}`,
+      `${person.name} ${person.degree_year || ""} ${person.year} ${person.year_kind || ""} ${person.degree_country || ""} ${formatCountryName(person.degree_country)} ${person.country} ${formatCountryName(person.country)}`,
     );
     if (!terms.every((term) => haystack.includes(term))) {
       return;
@@ -1855,7 +1870,7 @@ function renderSummaryPanel(graphData) {
       {
         label: "PhD",
         value: facultyDegreeSummary(faculty, person),
-        detail: faculty.osu_phd_from_profile || "from genealogy record",
+        detail: facultyPhdSourceDetail(faculty),
       },
       {
         label: advisors.length === 1 ? "Advisor" : "Advisors",
@@ -2065,7 +2080,7 @@ function renderSummaryPanel(graphData) {
     {
       label: "Earliest Common Ancestor",
       value: earliest ? earliest.name : "None",
-      detail: earliest ? `${earliest.year || ""} ${earliest.country || ""}`.trim() : "No dated ancestor",
+      detail: earliest ? `${earliest.year || ""} ${formatCountryName(earliest.country)}`.trim() : "No dated ancestor",
     },
     {
       label: selectedAncestor ? "Selected Ancestor Reach" : "Deepest Shared Link",
@@ -2292,18 +2307,39 @@ function renderSharedAncestorPanel(rows) {
 
 function renderAncestorTable(rows) {
   renderSharedAncestorPanel(rows);
-  const topRows = rows.slice(0, 40);
-  if (!topRows.length) {
+  if (els.ancestorTableSearch && els.ancestorTableSearch.value !== state.sharedAncestorQuery) {
+    els.ancestorTableSearch.value = state.sharedAncestorQuery;
+  }
+
+  const query = state.sharedAncestorQuery.trim();
+  const filteredRows = query
+      ? rows.filter((row) => textMatchesSearch(
+      `${row.name} ${row.degree_country || ""} ${formatCountryName(row.degree_country)} ${tableYearLabel(row)} ${row.matchedCount} ${row.maxDistance} ${row.totalDistance}`,
+      query,
+    ))
+    : rows;
+
+  if (els.ancestorTableStatus) {
+    els.ancestorTableStatus.textContent = query
+      ? `${filteredRows.length.toLocaleString()} matching ${filteredRows.length === 1 ? "ancestor" : "ancestors"} of ${rows.length.toLocaleString()}`
+      : `${rows.length.toLocaleString()} ${rows.length === 1 ? "ancestor" : "ancestors"} in table`;
+  }
+
+  if (!rows.length) {
     els.ancestorRows.innerHTML = `<tr><td colspan="6" class="empty">No selected faculty.</td></tr>`;
     return;
   }
+  if (!filteredRows.length) {
+    els.ancestorRows.innerHTML = `<tr><td colspan="6" class="empty">No matching ancestors.</td></tr>`;
+    return;
+  }
 
-  els.ancestorRows.innerHTML = topRows
+  els.ancestorRows.innerHTML = filteredRows
     .map((row) => `
       <tr data-person-index="${row.personIndex}">
         <td><a href="${row.url}" target="_blank" rel="noreferrer">${escapeHtml(row.name)}</a></td>
         <td title="${row.year_kind === "inferred" ? "Estimated graph placement year" : "Degree year from the genealogy record"}">${escapeHtml(tableYearLabel(row))}</td>
-        <td>${escapeHtml(row.degree_country || "")}</td>
+        <td>${escapeHtml(formatCountryName(row.degree_country))}</td>
         <td class="numeric">${row.matchedCount}</td>
         <td class="numeric">${row.maxDistance}</td>
         <td class="numeric">${row.totalDistance}</td>
@@ -3283,6 +3319,15 @@ document.addEventListener("click", (event) => {
 els.sharedAncestorsPanel.addEventListener("toggle", () => {
   state.sharedAncestorsOpen = els.sharedAncestorsPanel.open;
 });
+
+function updateSharedAncestorQueryFromInput() {
+  state.sharedAncestorQuery = els.ancestorTableSearch.value;
+  renderAncestorTable(state.currentGraphData?.common || commonAncestors());
+}
+
+els.ancestorTableSearch.addEventListener("input", updateSharedAncestorQueryFromInput);
+els.ancestorTableSearch.addEventListener("search", updateSharedAncestorQueryFromInput);
+els.ancestorTableSearch.addEventListener("change", updateSharedAncestorQueryFromInput);
 
 els.backToGroupView.addEventListener("click", () => {
   backToGroupView();
