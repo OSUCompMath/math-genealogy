@@ -31,6 +31,29 @@ AREA_COLUMNS = [
     "note",
 ]
 
+PROFESSIONAL_WEBSITE_OVERRIDES = {
+    "Andrey Gogolyev": "https://people.math.osu.edu/gogolyev.1/",
+    "Cosmin Roman": "https://people.math.osu.edu/roman.37/",
+    "Dongbin Xiu": "https://sites.google.com/view/dongbin-xiu",
+    "Ian Hamilton": "https://u.osu.edu/hamilton.598/",
+    "Jennifer Park": "https://u.osu.edu/park-2720/",
+    "Niles Johnson": "https://nilesjohnson.net/index.html",
+}
+
+PROFESSIONAL_WEBSITE_FALLBACK_TO_OSU = {
+    "Janet Best",
+    "Nathan Broaddus",
+    "Mirel Caibar",
+    "Rodica Costin",
+    "Grzegorz Rempala",
+    "Ivo Herzog",
+    "Roman Holowinsky",
+    "Crichton Ogle",
+    "Matthew Stenzel",
+    "Thomas Kerler",
+    "Feride Tiglay",
+}
+
 
 def ascii_clean(value: str) -> str:
     replacements = {
@@ -205,6 +228,10 @@ def main() -> None:
                 professional_website_url = existing.get("professional_website_url", "")
                 note = "OSU profile page unavailable in local profile cache."
 
+        if name in PROFESSIONAL_WEBSITE_FALLBACK_TO_OSU:
+            professional_website_url = ""
+        else:
+            professional_website_url = PROFESSIONAL_WEBSITE_OVERRIDES.get(name, professional_website_url)
         website_url = professional_website_url or osu_profile_url
         rows.append(
             {

@@ -46,6 +46,7 @@ Roy Joshua	13053	Joshua, Roy	Northwestern University	1983	Ph.D. Northwestern Uni
 Eric Katz	85162	Katz, Eric	Stanford University	2004	PhD: Stanford University (2004)	checked	
 Thomas Kerler	165663	Kerler, Thomas	ETH Zurich	1992	PhD: ETH-Zurich - Theoretical Physics (1992)	checked	
 Kenneth Koenig	47876	Koenig, Kenneth	Princeton University	2000	PhD: Princeton University (2000)	checked	
+Kenneth Ng	316946	Ng, Tsz Hin Kenneth	University of Illinois at Urbana-Champaign	2024	PhD: The University of Illinois Urbana-Champaign (2024)	checked	MGP lists full given name as Tsz Hin Kenneth Ng.
 Sanjeevi Krishnan	100253	Krishnan, Sanjeevi	The University of Chicago	2006	not listed on OSU profile	osu phd not listed	
 Jean-Francois Lafont	62273	Lafont, Jean-Francois	University of Michigan	2002	PhD: University of Michigan (2002)	checked	
 King-Yeung (Adrian) Lam	153112	Lam, King-Yeung	University of Minnesota - Twin Cities	2011	PhD: University of Minnesota; profile prose says Twin Cities, 2011	checked	
@@ -91,4 +92,3 @@ Scott Zimmerman	219890	Zimmerman, Scott	University of Pittsburgh	2017	not listed
 # Columns:
 # osu_name	mgp_id	mgp_name	mgp_degree_school	mgp_degree_year	osu_phd_from_profile	verification_status	note
 Ian Hamilton	MISSING				PhD: Simon Fraser University - Biology (2002)	missing	No matching MGP record found.
-Kenneth Ng	MISSING				PhD: The University of Illinois Urbana-Champaign (2024)	possibly inconsistent	MGP exact-name record Ng, Kenneth is University of Rochester (1989), so it was not used.

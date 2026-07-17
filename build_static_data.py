@@ -49,6 +49,11 @@ AREA_COLUMNS = [
     "note",
 ]
 
+# Pages in this set display no degree year on MGP, but an older local cache may
+# have captured a nearby student year. Keep those years out of authoritative
+# PhD-year fields; the graph builder can still infer a placement year.
+NO_DEGREE_YEAR_IDS = {"345878"}
+
 
 @dataclass
 class FacultyRecord:
@@ -180,10 +185,13 @@ def load_cached_person(cache_dir: Path, person_id: str) -> PersonRecord | None:
     if not path.exists():
         return None
     payload = json.loads(path.read_text(encoding="utf-8"))
+    year = str(payload.get("year") or "")
+    if str(payload["id"]) in NO_DEGREE_YEAR_IDS:
+        year = ""
     return PersonRecord(
         id=str(payload["id"]),
         name=str(payload.get("name") or payload["id"]),
-        year=str(payload.get("year") or ""),
+        year=year,
         country=str(payload.get("country") or ""),
         advisors=[(str(a[0]), str(a[1])) for a in payload.get("advisors", [])],
         url=str(payload.get("url") or BASE_URL.format(id=payload["id"])),
@@ -229,14 +237,71 @@ def fetch_person(session: requests.Session, person_id: str, delay: float) -> Per
     response = session.get(BASE_URL.format(id=person_id), timeout=30)
     response.raise_for_status()
     parsed = parse_person(response.text, person_id)
+    year = parsed.year or ""
+    if parsed.id in NO_DEGREE_YEAR_IDS:
+        year = ""
     return PersonRecord(
         id=parsed.id,
         name=parsed.name,
-        year=parsed.year or "",
+        year=year,
         country=parsed.country or "",
         advisors=parsed.advisors,
         url=BASE_URL.format(id=person_id),
     )
+
+
+def parse_year_number(value: str) -> int | None:
+    match = re.search(r"\b((?:1[0-9]|20)[0-9]{2})\b", value or "")
+    return int(match.group(1)) if match else None
+
+
+def graph_year_metadata(people: list[PersonRecord]) -> dict[str, dict[str, str]]:
+    """Return authoritative degree metadata plus optional inferred layout years."""
+    by_id = {person.id: person for person in people}
+    degree_year_by_id = {
+        person.id: ("" if person.id in NO_DEGREE_YEAR_IDS else person.year)
+        for person in people
+    }
+    direct_student_years: dict[str, list[int]] = {person.id: [] for person in people}
+    for student in people:
+        student_year = parse_year_number(degree_year_by_id.get(student.id, ""))
+        if student_year is None:
+            continue
+        for advisor_id, _advisor_name in student.advisors:
+            if advisor_id in by_id:
+                direct_student_years.setdefault(advisor_id, []).append(student_year)
+
+    metadata: dict[str, dict[str, str]] = {}
+    for person in people:
+        degree_year = degree_year_by_id[person.id]
+        if degree_year:
+            metadata[person.id] = {
+                "degree_year": degree_year,
+                "degree_country": person.country,
+                "year": degree_year,
+                "country": person.country,
+                "year_kind": "degree",
+            }
+            continue
+
+        inferred_years = direct_student_years.get(person.id, [])
+        if inferred_years:
+            metadata[person.id] = {
+                "degree_year": "",
+                "degree_country": "",
+                "year": str(min(inferred_years)),
+                "country": "",
+                "year_kind": "inferred",
+            }
+        else:
+            metadata[person.id] = {
+                "degree_year": "",
+                "degree_country": "",
+                "year": "",
+                "country": "",
+                "year_kind": "unknown",
+            }
+    return metadata
 
 
 def load_or_fetch_person(
@@ -369,6 +434,7 @@ def build_static_payload(
 ) -> dict[str, Any]:
     distances_by_faculty = compute_ancestor_distances(people, faculty)
     sorted_people = sorted(people.values(), key=lambda p: (int(p.id) if p.id.isdigit() else 10**12, p.id))
+    year_metadata = graph_year_metadata(sorted_people)
     id_to_index = {person.id: i for i, person in enumerate(sorted_people)}
     faculty_id_to_index = {record.mgp_id: i for i, record in enumerate(faculty)}
 
@@ -395,6 +461,7 @@ def build_static_payload(
     seen_edges: set[tuple[int, int]] = set()
     for person in sorted_people:
         person_idx = id_to_index[person.id]
+        person_year = year_metadata[person.id]
         advisor_indices: list[int] = []
         advisor_ids: list[str] = []
         for advisor_id, _advisor_name in person.advisors:
@@ -411,8 +478,11 @@ def build_static_payload(
             {
                 "id": person.id,
                 "name": person.name,
-                "year": person.year,
-                "country": person.country,
+                "year": person_year["year"],
+                "degree_year": person_year["degree_year"],
+                "year_kind": person_year["year_kind"],
+                "country": person_year["country"],
+                "degree_country": person_year["degree_country"],
                 "url": person.url,
                 "advisor_ids": advisor_ids,
                 "advisor_indices": advisor_indices,
@@ -498,6 +568,7 @@ def build_static_payload(
             "max_depth": max_depth,
             "person_count": len(people_payload),
             "edge_count": len(edges),
+            "roster_faculty_count": len(faculty_payload) + len(unresolved),
             "faculty_count": len(faculty_payload),
             "unresolved_faculty_count": len(unresolved),
             "missing_page_count": len(missing_pages),

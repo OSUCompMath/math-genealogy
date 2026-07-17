@@ -35,7 +35,7 @@ from pathlib import Path
 from typing import Dict, List, Tuple, Set, Optional
 
 import requests
-from bs4 import BeautifulSoup
+from bs4 import BeautifulSoup, FeatureNotFound
 from tqdm import tqdm
 
 
@@ -152,10 +152,6 @@ def parse_degree_info_container(soup: BeautifulSoup):
             # Next-strongest: a country flag image (degree text style varies)
             if previous.find("img", src=re.compile(r"img/flags/")):
                 return previous
-            # Last-ditch: a 4-digit year, but only on small divs so we don't
-            # accidentally pick up a wrapper whose text happens to contain a year.
-            if len(text) <= 300 and re.search(r"\b(?:1[0-9]|20)[0-9]{2}\b", text):
-                return previous
             previous = previous.find_previous("div")
 
     for tag in soup.find_all(["span", "div"]):
@@ -261,7 +257,10 @@ def parse_university(soup: BeautifulSoup) -> Optional[str]:
 
 
 def parse_person(html: str, mgp_id: str) -> Person:
-    soup = BeautifulSoup(html, "lxml")
+    try:
+        soup = BeautifulSoup(html, "lxml")
+    except FeatureNotFound:
+        soup = BeautifulSoup(html, "html.parser")
 
     h2 = soup.find("h2")
     if h2:
