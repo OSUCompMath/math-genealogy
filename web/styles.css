@@ -64,7 +64,7 @@ button:disabled {
 
 .app-shell {
   display: grid;
-  grid-template-columns: minmax(260px, 320px) minmax(0, 1fr);
+  grid-template-columns: minmax(232px, 270px) minmax(0, 1fr);
   grid-template-rows: auto 1fr;
   min-height: 100vh;
 }
@@ -181,8 +181,14 @@ h2 {
 }
 
 .detail-panel {
+  display: flex;
+  flex-direction: column;
   max-height: none;
   overflow: visible;
+}
+
+.detail-panel > .panel-heading {
+  order: 0;
 }
 
 .detail-actions {
@@ -798,6 +804,10 @@ h2 {
   display: none;
 }
 
+.mobile-graph-action {
+  display: none;
+}
+
 .selection-chips {
   display: flex;
   flex-wrap: wrap;
@@ -922,7 +932,7 @@ h2 {
   width: 100%;
   height: clamp(620px, 70vh, 820px);
   cursor: grab;
-  touch-action: pan-y;
+  touch-action: none;
 }
 
 #graphCanvas.dragging {
@@ -1212,6 +1222,7 @@ td a,
 }
 
 .summary-panel {
+  order: 2;
   margin-top: 12px;
 }
 
@@ -1358,6 +1369,7 @@ details:not([open]) > summary .summary-toggle::before {
 
 .node-detail {
   display: grid;
+  order: 3;
   gap: 10px;
   margin-top: 12px;
   color: var(--muted);
@@ -1438,11 +1450,17 @@ button.tag:focus-visible {
 }
 
 .chain-panel {
+  order: 4;
   margin-top: 16px;
 }
 
 .relationship-panel {
+  order: 1;
   margin-top: 12px;
+}
+
+.relationship-panel:empty {
+  display: none;
 }
 
 .relationship-card {
@@ -1641,7 +1659,7 @@ button.tag:focus-visible {
 @media (min-width: 1240px) {
   .workspace {
     display: grid;
-    grid-template-columns: minmax(600px, 1fr) minmax(270px, 320px);
+    grid-template-columns: minmax(620px, 1fr) minmax(238px, 272px);
     align-items: start;
   }
 
@@ -1791,11 +1809,23 @@ button.tag:focus-visible {
     align-items: stretch;
   }
 
+  .current-view-actions {
+    justify-content: flex-start;
+  }
+
   .mobile-details-trigger {
     display: inline-flex;
     align-items: center;
     justify-content: center;
     flex: 0 0 auto;
+  }
+
+  .mobile-graph-action {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    flex: 0 0 auto;
+    min-width: 40px;
   }
 
   .app-shell[data-details-open="true"] .detail-backdrop {
@@ -1828,6 +1858,10 @@ button.tag:focus-visible {
   .app-shell[data-details-open="true"] .detail-panel {
     max-height: calc(82vh - 20px);
     overflow: auto;
+  }
+
+  .app-shell[data-details-open="true"] .relationship-panel {
+    margin-top: 10px;
   }
 
   .mobile-detail-close {
@@ -1865,16 +1899,105 @@ button.tag:focus-visible {
     grid-template-columns: 1fr;
   }
 
+  .shared-ancestor-panel[open] {
+    padding: 10px;
+  }
+
+  .shared-ancestor-panel > summary {
+    align-items: flex-start;
+  }
+
+  .shared-ancestor-panel summary small {
+    white-space: normal;
+  }
+
+  .table-note {
+    font-size: 0.78rem;
+  }
+
+  .table-wrap {
+    max-height: min(54vh, 520px);
+    overflow-x: hidden;
+    overflow-y: auto;
+  }
+
+  table {
+    display: block;
+    min-width: 0;
+    width: 100%;
+    border-collapse: separate;
+    border-spacing: 0;
+  }
+
+  table thead {
+    display: none;
+  }
+
+  table tbody {
+    display: grid;
+    gap: 8px;
+  }
+
+  #ancestorRows tr {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 7px 10px;
+    padding: 10px;
+    border: 1px solid var(--line);
+    border-left: 4px solid var(--scarlet);
+    border-radius: 7px;
+    background: var(--white);
+  }
+
+  #ancestorRows td {
+    display: block;
+    padding: 0;
+    border: 0;
+    color: var(--gray-dark-60);
+    font-size: 0.78rem;
+    line-height: 1.25;
+    text-align: left;
+  }
+
+  #ancestorRows td:first-child {
+    grid-column: 1 / -1;
+    font-size: 0.88rem;
+    font-weight: 800;
+    line-height: 1.25;
+  }
+
+  #ancestorRows td:first-child a {
+    overflow-wrap: anywhere;
+  }
+
+  #ancestorRows td:not(:first-child)::before {
+    content: attr(data-label);
+    display: block;
+    margin-bottom: 2px;
+    color: var(--muted);
+    font-size: 0.66rem;
+    font-weight: 800;
+    line-height: 1.1;
+    text-transform: uppercase;
+  }
+
+  #ancestorRows td.empty {
+    grid-column: 1 / -1;
+    font-weight: 700;
+  }
+
   .range-control {
     min-width: 0;
   }
 
   .canvas-wrap {
-    min-height: 430px;
+    min-height: min(56vh, 500px);
+    border-radius: 0;
+    margin-inline: -12px;
   }
 
   #graphCanvas {
-    height: 430px;
+    height: min(56vh, 500px);
   }
 
   .graph-selection-card {
@@ -1891,7 +2014,60 @@ button.tag:focus-visible {
   }
 
   .overview-canvas {
+    top: auto;
+    right: 10px;
+    bottom: 58px;
     width: 132px;
     height: 88px;
+  }
+}
+
+@media (max-width: 430px) {
+  .workspace,
+  .sidebar {
+    padding: 10px;
+  }
+
+  .graph-navigation,
+  .current-view-bar,
+  .selection-chips,
+  .graph-panel {
+    border-radius: 6px;
+  }
+
+  .current-view-actions button {
+    min-height: 34px;
+    padding-inline: 9px;
+  }
+
+  .canvas-wrap {
+    min-height: 54vh;
+    margin-inline: -10px;
+  }
+
+  #graphCanvas {
+    height: 54vh;
+  }
+
+  .graph-legend {
+    display: none;
+  }
+
+  .graph-selection-card {
+    max-height: 35vh;
+    overflow: auto;
+  }
+
+  .app-shell[data-details-open="true"] .detail-drawer {
+    max-height: 86vh;
+    padding: 8px;
+  }
+
+  .app-shell[data-details-open="true"] .workspace {
+    padding-bottom: calc(86vh + 12px);
+  }
+
+  .app-shell[data-details-open="true"] .detail-panel {
+    max-height: calc(86vh - 16px);
   }
 }

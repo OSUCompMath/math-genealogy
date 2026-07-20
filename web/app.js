@@ -1,9 +1,11 @@
 const DATA_URLS = ["data/osu_mgp_graph.json", "../data/osu_mgp_graph.json"];
-const DATA_VERSION = "20260717-final-polish-9";
+const DATA_VERSION = "20260720-mobile-polish-2";
 const DEFAULT_VISIBLE_ANCESTORS = 60;
+const MOBILE_VISIBLE_ANCESTORS = 32;
 const MIN_SCALE = 0.15;
 const MAX_SCALE = 2.8;
 const OVERVIEW_PADDING = 10;
+const EDGE_VIEWPORT_PADDING = 220;
 const ADVISOR_PATH_INITIAL_COUNT = 1;
 const SELECTION_CHIP_INITIAL_COUNT = 10;
 const SELECTION_CHIP_INCREMENT = 25;
@@ -52,6 +54,8 @@ const state = {
   selectionChipKey: "none",
   detailFacultyLimit: DETAIL_FACULTY_INITIAL_COUNT,
   detailFacultyKey: "none",
+  relationshipPairKey: "none",
+  relationshipAutoOpened: false,
   graphNodes: [],
   nodePositions: new Map(),
   graphBounds: { left: 0, top: 0, right: 1, bottom: 1, width: 1, height: 1 },
@@ -67,6 +71,8 @@ const state = {
   pointerMoved: false,
   pointerStart: { x: 0, y: 0 },
   viewStart: { x: 0, y: 0 },
+  activePointers: new Map(),
+  pinchStart: null,
   overviewTransform: null,
   isApplyingUrlState: false,
 };
@@ -532,6 +538,9 @@ function backToGroupView(shouldRender = true) {
 
 function setDetailsOpen(isOpen, shouldRender = true) {
   state.detailsOpen = Boolean(isOpen);
+  if (!state.detailsOpen) {
+    state.relationshipAutoOpened = true;
+  }
   if (state.detailsOpen) {
     state.activeView = "graph";
   }
@@ -566,6 +575,33 @@ function syncNavigation() {
   }
   if (els.backToGroupView) {
     els.backToGroupView.disabled = state.selectedAncestorIndex === null && !isCustomSelection() && state.selectedNodeIndex === null && state.focusMode === "common";
+  }
+}
+
+function isMobileDetailsLayout() {
+  return window.matchMedia("(max-width: 860px)").matches;
+}
+
+function isCoarsePointer() {
+  return window.matchMedia("(pointer: coarse)").matches;
+}
+
+function syncMobileRelationshipDetails() {
+  const active = activeFacultyIndices();
+  const pairKey = active.length === 2 ? active.slice().sort((a, b) => a - b).join("-") : "none";
+  if (pairKey !== state.relationshipPairKey) {
+    state.relationshipPairKey = pairKey;
+    state.relationshipAutoOpened = false;
+  }
+  if (
+    pairKey !== "none" &&
+    state.activeView === "graph" &&
+    isMobileDetailsLayout() &&
+    !state.detailsOpen &&
+    !state.relationshipAutoOpened
+  ) {
+    state.detailsOpen = true;
+    state.relationshipAutoOpened = true;
   }
 }
 
@@ -610,7 +646,8 @@ function currentShareUrl() {
   if (state.minShared !== 2) {
     params.set("min", String(state.minShared));
   }
-  if (state.visibleAncestorLimit !== DEFAULT_VISIBLE_ANCESTORS) {
+  const defaultLimit = isMobileDetailsLayout() ? MOBILE_VISIBLE_ANCESTORS : DEFAULT_VISIBLE_ANCESTORS;
+  if (state.visibleAncestorLimit !== defaultLimit) {
     params.set("limit", String(state.visibleAncestorLimit));
   }
   if (state.selectedNodeIndex !== null) {
@@ -677,6 +714,8 @@ function applyUrlState() {
   const limit = Number(params.get("limit"));
   if (Number.isFinite(limit) && limit >= 1) {
     state.visibleAncestorLimit = Math.floor(limit);
+  } else if (isMobileDetailsLayout()) {
+    state.visibleAncestorLimit = Math.min(state.visibleAncestorLimit, MOBILE_VISIBLE_ANCESTORS);
   }
 
   const nodeId = params.get("node");
@@ -684,6 +723,8 @@ function applyUrlState() {
   if (nodeIndex !== null) {
     state.selectedNodeIndex = nodeIndex;
     state.pendingCenterNodeIndex = nodeIndex;
+  } else if (isMobileDetailsLayout()) {
+    state.needsFit = "faculty";
   }
 
   state.isApplyingUrlState = false;
@@ -1630,6 +1671,7 @@ function focusViewDescription(activeCount = activeFacultyIndices().length) {
 
 function renderCurrentViewSummary(graphData) {
   const active = activeFacultyIndices();
+  const hasTwoFaculty = active.length === 2;
   const group = activeGroup();
   const selectedAncestor = state.selectedAncestorIndex === null ? null : state.people[state.selectedAncestorIndex];
   const selectedNode = state.selectedNodeIndex === null ? null : state.people[state.selectedNodeIndex];
@@ -1655,10 +1697,28 @@ function renderCurrentViewSummary(graphData) {
       `).join("")}
     </div>
     <div class="current-view-actions">
+      <button type="button" class="mobile-graph-action" data-inline-graph-action="zoom-out" aria-label="Zoom out">-</button>
+      <button type="button" class="mobile-graph-action" data-inline-graph-action="zoom-in" aria-label="Zoom in">+</button>
+      <button type="button" class="mobile-graph-action" data-inline-graph-action="fit-all">Full</button>
+      <button type="button" class="mobile-graph-action" data-inline-graph-action="fit-faculty">Faculty</button>
       <button type="button" id="resetViewInline">Reset view</button>
-      <button type="button" id="openDetailsSheet" class="mobile-details-trigger">Details</button>
+      <button type="button" id="openDetailsSheet" class="mobile-details-trigger">${hasTwoFaculty ? "Connection" : "Details"}</button>
     </div>
   `;
+  els.currentViewSummary.querySelector("[data-inline-graph-action='zoom-out']")?.addEventListener("click", () => {
+    zoomAt({ x: els.canvas.clientWidth / 2, y: els.canvas.clientHeight / 2 }, 0.82);
+  });
+  els.currentViewSummary.querySelector("[data-inline-graph-action='zoom-in']")?.addEventListener("click", () => {
+    zoomAt({ x: els.canvas.clientWidth / 2, y: els.canvas.clientHeight / 2 }, 1.18);
+  });
+  els.currentViewSummary.querySelector("[data-inline-graph-action='fit-all']")?.addEventListener("click", () => {
+    state.needsFit = "all";
+    drawGraph();
+  });
+  els.currentViewSummary.querySelector("[data-inline-graph-action='fit-faculty']")?.addEventListener("click", () => {
+    state.needsFit = "faculty";
+    drawGraph();
+  });
   els.currentViewSummary.querySelector("#resetViewInline")?.addEventListener("click", () => {
     state.needsFit = "all";
     drawGraph();
@@ -2338,11 +2398,11 @@ function renderAncestorTable(rows) {
     .map((row) => `
       <tr data-person-index="${row.personIndex}">
         <td><a href="${row.url}" target="_blank" rel="noreferrer">${escapeHtml(row.name)}</a></td>
-        <td title="${row.year_kind === "inferred" ? "Estimated graph placement year" : "Degree year from the genealogy record"}">${escapeHtml(tableYearLabel(row))}</td>
-        <td>${escapeHtml(formatCountryName(row.degree_country))}</td>
-        <td class="numeric">${row.matchedCount}</td>
-        <td class="numeric">${row.maxDistance}</td>
-        <td class="numeric">${row.totalDistance}</td>
+        <td data-label="Year" title="${row.year_kind === "inferred" ? "Estimated graph placement year" : "Degree year from the genealogy record"}">${escapeHtml(tableYearLabel(row))}</td>
+        <td data-label="Country">${escapeHtml(formatCountryName(row.degree_country))}</td>
+        <td data-label="Faculty shown" class="numeric">${row.matchedCount}</td>
+        <td data-label="Longest path" class="numeric">${row.maxDistance}</td>
+        <td data-label="Total links" class="numeric">${row.totalDistance}</td>
       </tr>
     `)
     .join("");
@@ -2506,8 +2566,22 @@ function yearToY(year) {
 
 function computeNodePositions(graphData, displayWidth = 1200) {
   const positions = new Map();
+  const mobile = isMobileDetailsLayout();
   const facultySet = graphData.activeFacultyPersonIndices;
   const ancestorNodes = graphData.nodes.filter((index) => !facultySet.has(index));
+  const facultyNodes = Array.from(facultySet).sort((a, b) => state.people[a].name.localeCompare(state.people[b].name));
+  const facultyPersonSlot = new Map(facultyNodes.map((personIndex, slot) => [personIndex, slot]));
+  const activeFaculty = activeFacultyIndices();
+  const activeMask = maskForFaculty(activeFaculty);
+  const facultySlotByFacultyIndex = new Map();
+  activeFaculty.forEach((facultyIndex) => {
+    const personIndex = Number(state.faculty[facultyIndex]?.person_index);
+    const slot = facultyPersonSlot.get(personIndex);
+    if (Number.isInteger(slot)) {
+      facultySlotByFacultyIndex.set(facultyIndex, slot);
+    }
+  });
+  const centerCache = new Map();
   const years = graphData.nodes.map((index) => yearNumber(state.people[index])).filter(Number.isFinite);
   const minYear = Math.min(...years, 1100);
   const maxYear = Math.max(...years, 2026);
@@ -2516,12 +2590,36 @@ function computeNodePositions(graphData, displayWidth = 1200) {
   const unknown = [];
   const commonRank = new Map(graphData.common.map((row, rank) => [row.personIndex, rank]));
 
+  function descendantCenterRatio(personIndex) {
+    if (centerCache.has(personIndex)) {
+      return centerCache.get(personIndex);
+    }
+    const mask = state.peopleMasks[personIndex] & activeMask;
+    let total = 0;
+    let count = 0;
+    activeFaculty.forEach((facultyIndex) => {
+      if ((mask & (1n << BigInt(facultyIndex))) === 0n) {
+        return;
+      }
+      const slot = facultySlotByFacultyIndex.get(facultyIndex);
+      if (Number.isInteger(slot)) {
+        total += slot;
+        count += 1;
+      }
+    });
+    const ratio = count ? total / count / Math.max(1, facultyNodes.length - 1) : 0.5;
+    centerCache.set(personIndex, ratio);
+    return ratio;
+  }
+
   ancestorNodes
     .slice()
     .sort((a, b) => {
       const yearA = yearNumber(state.people[a]) || 9999;
       const yearB = yearNumber(state.people[b]) || 9999;
-      return yearA - yearB || (commonRank.get(a) || 0) - (commonRank.get(b) || 0);
+      return yearA - yearB ||
+        descendantCenterRatio(a) - descendantCenterRatio(b) ||
+        (commonRank.get(a) ?? 9999) - (commonRank.get(b) ?? 9999);
     })
     .forEach((personIndex) => {
       const year = yearNumber(state.people[personIndex]);
@@ -2541,15 +2639,25 @@ function computeNodePositions(graphData, displayWidth = 1200) {
     buckets[bandCount - 1].push(...unknown);
   }
 
+  buckets.forEach((bucket) => {
+    bucket.sort((a, b) =>
+      descendantCenterRatio(a) - descendantCenterRatio(b) ||
+      (commonRank.get(a) ?? 9999) - (commonRank.get(b) ?? 9999) ||
+      state.people[a].name.localeCompare(state.people[b].name),
+    );
+  });
+
   const maxBucketSize = Math.max(1, ...buckets.map((bucket) => bucket.length));
-  const facultyRowTarget = clamp(Math.floor((displayWidth || 1200) / 58), 18, 36);
+  const facultyRowTarget = mobile
+    ? clamp(Math.floor((displayWidth || 393) / 58), 5, 8)
+    : clamp(Math.floor((displayWidth || 1200) / 58), 18, 36);
   const facultyRows = Math.max(1, Math.ceil(facultySet.size / facultyRowTarget));
   const facultyColumns = Math.max(1, Math.ceil(facultySet.size / facultyRows));
   const facultyBandHeight = 116 + (facultyRows - 1) * 120;
-  const countBasedWidth = Math.max(360 + facultyColumns * 158, 320 + maxBucketSize * 74);
-  const viewportBasedWidth = Math.round((displayWidth || 1200) * 2.15);
+  const countBasedWidth = Math.max(360 + facultyColumns * (mobile ? 142 : 158), 320 + maxBucketSize * (mobile ? 54 : 74));
+  const viewportBasedWidth = Math.round((displayWidth || 1200) * (mobile ? 1.82 : 2.15));
   const worldWidth = Math.max(
-    1550,
+    mobile ? 1060 : 1550,
     Math.min(9000, Math.max(countBasedWidth, viewportBasedWidth)),
   );
   const worldHeight = Math.max(
@@ -2571,23 +2679,26 @@ function computeNodePositions(graphData, displayWidth = 1200) {
     bottom: Math.max(260, facultyBandTop - 150),
   };
 
-  const left = 120;
-  const right = worldWidth - 160;
+  const left = mobile ? 76 : 120;
+  const right = worldWidth - (mobile ? 92 : 160);
   const usableWidth = Math.max(1, right - left);
   buckets.forEach((bucket, band) => {
     const spread = bucket.length <= 1 ? 0 : usableWidth / (bucket.length - 1);
     bucket.forEach((personIndex, slot) => {
       const person = state.people[personIndex];
       const year = yearNumber(person);
-      const x = bucket.length <= 1
-        ? left + ((band * 137) % Math.max(180, usableWidth))
-        : left + slot * spread + ((band % 3) - 1) * 10;
+      const slotX = bucket.length <= 1
+        ? left + descendantCenterRatio(personIndex) * usableWidth
+        : left + slot * spread;
+      const descendantX = left + descendantCenterRatio(personIndex) * usableWidth;
+      const descendantWeight = mobile ? 0.68 : 0.58;
+      const jitter = ((band % 3) - 1) * (mobile ? 8 : 12);
+      const x = clamp(descendantX * descendantWeight + slotX * (1 - descendantWeight) + jitter, left, right);
       const y = year ? yearToY(year) : worldHeight - 280;
       positions.set(personIndex, { x, y });
     });
   });
 
-  const facultyNodes = Array.from(facultySet).sort((a, b) => state.people[a].name.localeCompare(state.people[b].name));
   facultyNodes.forEach((personIndex, slot) => {
     const row = Math.floor(slot / facultyColumns);
     const column = slot % facultyColumns;
@@ -2627,6 +2738,7 @@ function fitGraphView(mode = "width") {
   const width = els.canvas.clientWidth || 1200;
   const height = els.canvas.clientHeight || 620;
   const bounds = state.graphBounds;
+  const mobile = isMobileDetailsLayout();
   if (mode === "faculty") {
     const graphData = state.currentGraphData;
     const facultyPoints = graphData
@@ -2638,21 +2750,22 @@ function fitGraphView(mode = "width") {
       const left = Math.min(...facultyPoints.map((point) => point.x));
       const right = Math.max(...facultyPoints.map((point) => point.x));
       const bottom = Math.max(...facultyPoints.map((point) => point.y));
-      const scale = clamp((width - 96) / Math.max(900, right - left + 280), MIN_SCALE, Math.min(MAX_SCALE, 1.2));
+      const scale = clamp((width - (mobile ? 36 : 96)) / Math.max(mobile ? 520 : 900, right - left + (mobile ? 120 : 280)), MIN_SCALE, Math.min(MAX_SCALE, mobile ? 1.55 : 1.2));
       state.view.scale = scale;
       state.view.x = width / 2 - ((left + right) / 2) * scale;
-      state.view.y = height - 150 - bottom * scale;
+      state.view.y = height - (mobile ? 86 : 150) - bottom * scale;
       return;
     }
   }
   const scaleX = (width - 72) / Math.max(1, bounds.width);
   const scaleY = (height - 72) / Math.max(1, bounds.height);
-  const scale = clamp(mode === "all" ? Math.min(scaleX, scaleY, 1) : Math.min(scaleX, 0.9), MIN_SCALE, MAX_SCALE);
+  const mobileScaleBoost = mobile && mode !== "all" ? 1.42 : 1;
+  const scale = clamp(mode === "all" ? Math.min(scaleX, scaleY, 1) : Math.min(scaleX * mobileScaleBoost, mobile ? 1.15 : 0.9), MIN_SCALE, MAX_SCALE);
   state.view.scale = scale;
   state.view.x = width / 2 - (bounds.left + bounds.width / 2) * scale;
   state.view.y = mode === "all"
     ? height / 2 - (bounds.top + bounds.height / 2) * scale
-    : 42 - bounds.top * scale;
+    : (mobile ? 26 : 42) - bounds.top * scale;
 }
 
 function centerOnNode(personIndex) {
@@ -2679,6 +2792,40 @@ function screenToWorld(point) {
     x: (point.x - state.view.x) / state.view.scale,
     y: (point.y - state.view.y) / state.view.scale,
   };
+}
+
+function currentWorldViewport(displayWidth, displayHeight, padding = EDGE_VIEWPORT_PADDING) {
+  const topLeft = screenToWorld({ x: -padding, y: -padding });
+  const bottomRight = screenToWorld({ x: displayWidth + padding, y: displayHeight + padding });
+  return {
+    left: Math.min(topLeft.x, bottomRight.x),
+    right: Math.max(topLeft.x, bottomRight.x),
+    top: Math.min(topLeft.y, bottomRight.y),
+    bottom: Math.max(topLeft.y, bottomRight.y),
+  };
+}
+
+function segmentMightTouchViewport(start, end, rect) {
+  const left = Math.min(start.x, end.x);
+  const right = Math.max(start.x, end.x);
+  const top = Math.min(start.y, end.y);
+  const bottom = Math.max(start.y, end.y);
+  return right >= rect.left && left <= rect.right && bottom >= rect.top && top <= rect.bottom;
+}
+
+function isImportantEdge(advisorIndex, studentIndex, graphData, commonRank) {
+  if (graphData.pathEdgeSet?.has(edgeKey(advisorIndex, studentIndex))) {
+    return true;
+  }
+  if (state.selectedNodeIndex === advisorIndex || state.selectedNodeIndex === studentIndex) {
+    return true;
+  }
+  if (graphData.activeFacultyPersonIndices.has(studentIndex) || graphData.activeFacultyPersonIndices.has(advisorIndex)) {
+    return true;
+  }
+  const advisorRank = commonRank.get(advisorIndex);
+  const studentRank = commonRank.get(studentIndex);
+  return (advisorRank !== undefined && advisorRank < 18) || (studentRank !== undefined && studentRank < 18);
 }
 
 function drawYearAxis() {
@@ -3009,7 +3156,12 @@ function drawGraph(graphData = visibleGraph()) {
   ctx.scale(state.view.scale, state.view.scale);
   drawYearAxis();
 
+  const activeMask = maskForFaculty(activeFacultyIndices());
+  const commonRank = new Map(graphData.common.map((row, rank) => [row.personIndex, rank]));
   ctx.lineWidth = 1 / state.view.scale;
+  const viewport = currentWorldViewport(displayWidth, displayHeight);
+  const lowZoom = state.view.scale < 0.42;
+  const denseGraph = graphData.edges.length > 320;
   graphData.edges.forEach(([advisorIndex, studentIndex]) => {
     const advisor = state.nodePositions.get(advisorIndex);
     const student = state.nodePositions.get(studentIndex);
@@ -3017,17 +3169,25 @@ function drawGraph(graphData = visibleGraph()) {
       return;
     }
     const highlighted = graphData.pathEdgeSet?.has(edgeKey(advisorIndex, studentIndex));
-    ctx.lineWidth = (highlighted ? 2.1 : 1) / state.view.scale;
-    ctx.strokeStyle = highlighted ? "rgba(186, 12, 47, 0.52)" : "rgba(100, 106, 110, 0.18)";
+    const important = isImportantEdge(advisorIndex, studentIndex, graphData, commonRank);
+    if (!highlighted && !important && !segmentMightTouchViewport(advisor, student, viewport)) {
+      return;
+    }
+    if (!highlighted && !important && lowZoom && denseGraph) {
+      return;
+    }
+    ctx.lineWidth = (highlighted ? 2.05 : important ? 1.15 : 0.8) / state.view.scale;
+    ctx.strokeStyle = highlighted
+      ? "rgba(186, 12, 47, 0.5)"
+      : important
+        ? "rgba(100, 106, 110, 0.24)"
+        : "rgba(100, 106, 110, 0.13)";
     ctx.beginPath();
     ctx.moveTo(advisor.x, advisor.y);
-    const midY = (advisor.y + student.y) / 2;
-    ctx.bezierCurveTo(advisor.x, midY, student.x, midY, student.x, student.y);
+    ctx.lineTo(student.x, student.y);
     ctx.stroke();
   });
 
-  const activeMask = maskForFaculty(activeFacultyIndices());
-  const commonRank = new Map(graphData.common.map((row, rank) => [row.personIndex, rank]));
   graphData.nodes.forEach((personIndex) => {
     const point = state.nodePositions.get(personIndex);
     if (!point) {
@@ -3086,6 +3246,7 @@ function render() {
   if (!state.payload) {
     return;
   }
+  syncMobileRelationshipDetails();
   els.loadingState.hidden = true;
   syncNavigation();
   renderSources();
@@ -3148,7 +3309,8 @@ function hitTestNode(screenPoint) {
       bestDistance = distance;
     }
   }
-  return bestDistance <= 14 / state.view.scale ? best : null;
+  const tapRadius = isCoarsePointer() ? 24 : 14;
+  return bestDistance <= tapRadius / state.view.scale ? best : null;
 }
 
 function showTooltip(personIndex, screenPoint) {
@@ -3181,19 +3343,77 @@ function zoomAt(screenPoint, factor) {
   drawGraph();
 }
 
+function pointerList() {
+  return Array.from(state.activePointers.values());
+}
+
+function pointerDistance(points) {
+  return Math.hypot(points[0].x - points[1].x, points[0].y - points[1].y);
+}
+
+function pointerCenter(points) {
+  return {
+    x: (points[0].x + points[1].x) / 2,
+    y: (points[0].y + points[1].y) / 2,
+  };
+}
+
+function startPinchGesture() {
+  const points = pointerList();
+  if (points.length < 2) {
+    state.pinchStart = null;
+    return;
+  }
+  const center = pointerCenter(points);
+  state.pinchStart = {
+    center,
+    distance: Math.max(1, pointerDistance(points)),
+    scale: state.view.scale,
+    centerWorld: screenToWorld(center),
+  };
+}
+
 function handlePointerDown(event) {
+  event.preventDefault();
   const point = canvasPoint(event);
+  state.activePointers.set(event.pointerId, point);
   state.pointerDown = true;
   state.pointerMoved = false;
   state.pointerStart = point;
   state.viewStart = { ...state.view };
   els.canvas.classList.add("dragging");
-  els.canvas.setPointerCapture(event.pointerId);
+  try {
+    els.canvas.setPointerCapture(event.pointerId);
+  } catch (_error) {
+    // Synthetic test events and some browser edge cases may not have capture.
+  }
+  if (state.activePointers.size >= 2) {
+    state.pointerMoved = true;
+    startPinchGesture();
+  }
 }
 
 function handlePointerMove(event) {
   const point = canvasPoint(event);
+  if (state.activePointers.has(event.pointerId)) {
+    state.activePointers.set(event.pointerId, point);
+  }
+  if (state.activePointers.size >= 2 && state.pinchStart) {
+    event.preventDefault();
+    const points = pointerList();
+    const center = pointerCenter(points);
+    const factor = pointerDistance(points) / state.pinchStart.distance;
+    const nextScale = clamp(state.pinchStart.scale * factor, MIN_SCALE, MAX_SCALE);
+    state.pointerMoved = true;
+    state.view.scale = nextScale;
+    state.view.x = center.x - state.pinchStart.centerWorld.x * nextScale;
+    state.view.y = center.y - state.pinchStart.centerWorld.y * nextScale;
+    hideTooltip();
+    drawGraph();
+    return;
+  }
   if (state.pointerDown) {
+    event.preventDefault();
     const dx = point.x - state.pointerStart.x;
     const dy = point.y - state.pointerStart.y;
     if (Math.hypot(dx, dy) > 3) {
@@ -3215,15 +3435,29 @@ function handlePointerMove(event) {
 }
 
 function handlePointerUp(event) {
+  event.preventDefault();
   const point = canvasPoint(event);
-  state.pointerDown = false;
-  els.canvas.classList.remove("dragging");
+  const wasPinching = state.activePointers.size >= 2 || Boolean(state.pinchStart);
+  state.activePointers.delete(event.pointerId);
+  state.pointerDown = state.activePointers.size > 0;
+  if (!state.pointerDown) {
+    els.canvas.classList.remove("dragging");
+  }
   try {
     els.canvas.releasePointerCapture(event.pointerId);
   } catch (_error) {
     // Pointer capture may already have been released by the browser.
   }
-  if (!state.pointerMoved) {
+  if (state.activePointers.size === 1) {
+    const remaining = pointerList()[0];
+    state.pointerStart = remaining;
+    state.viewStart = { ...state.view };
+    state.pinchStart = null;
+    state.pointerMoved = true;
+    return;
+  }
+  state.pinchStart = null;
+  if (!state.pointerMoved && !wasPinching) {
     const selected = hitTestNode(point);
     state.selectedNodeIndex = selected;
     if (selected !== null) {
@@ -3453,6 +3687,8 @@ els.canvas.addEventListener("pointercancel", handlePointerUp);
 els.canvas.addEventListener("dblclick", handleDoubleClick);
 els.canvas.addEventListener("mouseleave", () => {
   state.pointerDown = false;
+  state.activePointers.clear();
+  state.pinchStart = null;
   state.hoveredNodeIndex = null;
   els.canvas.classList.remove("dragging");
   hideTooltip();
