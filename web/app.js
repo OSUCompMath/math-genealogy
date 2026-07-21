@@ -1,24 +1,27 @@
-const DATA_URLS = ["data/osu_mgp_graph.json", "../data/osu_mgp_graph.json"];
-const DATA_VERSION = "20260720-mobile-polish-2";
+const DATA_URLS = ["../data/osu_mgp_graph.json", "data/osu_mgp_graph.json"];
+const DATA_VERSION = "20260721-feedback-49";
 const DEFAULT_VISIBLE_ANCESTORS = 60;
-const MOBILE_VISIBLE_ANCESTORS = 32;
+const ZOOM_REVEAL_MIN_ANCESTORS = 12;
+const ZOOM_REVEAL_FULL_SCALE = 0.7;
+const PLACEMENT_YEAR_OFFSET = 5;
+const PLACEMENT_YEAR_MIN = 650;
+const PLACEMENT_YEAR_MAX = 2026;
 const MIN_SCALE = 0.15;
 const MAX_SCALE = 2.8;
 const OVERVIEW_PADDING = 10;
-const EDGE_VIEWPORT_PADDING = 220;
 const ADVISOR_PATH_INITIAL_COUNT = 1;
 const SELECTION_CHIP_INITIAL_COUNT = 10;
 const SELECTION_CHIP_INCREMENT = 25;
-const DETAIL_FACULTY_INITIAL_COUNT = 14;
+const DETAIL_FACULTY_INITIAL_COUNT = 10;
 const DETAIL_FACULTY_INCREMENT = 25;
-const VALID_VIEWS = new Set(["faculty", "graph"]);
-const VALID_FOCUS_MODES = new Set(["common", "faculty", "descendants", "path"]);
+const VALID_VIEWS = new Set(["faculty", "graph", "details"]);
+const VALID_FOCUS_MODES = new Set(["common", "faculty"]);
 const GRAPH_ANCESTOR_PRESETS = [
   { label: "Ibn Sina", pid: "298616" },
   { label: "Gauss", pid: "18231" },
   { label: "Euler", pid: "38586" },
+  { label: "Hilbert", pid: "7298" },
 ];
-const GRAPH_CONTROLS_STORAGE_KEY = "osu-math-geneology-graph-controls-open";
 
 const state = {
   payload: null,
@@ -29,11 +32,11 @@ const state = {
   groupLabels: new Map(),
   edges: [],
   peopleMasks: [],
+  estimatedYears: new Map(),
   selectedGroupId: "all-faculty",
   activeView: "graph",
   focusMode: "common",
   detailsOpen: false,
-  graphControlsOpen: readStoredBoolean(GRAPH_CONTROLS_STORAGE_KEY, false),
   areaMenuOpen: false,
   ancestorQuery: "",
   selectedAncestorIndex: null,
@@ -44,7 +47,6 @@ const state = {
   graphSearchQuery: "",
   graphSearchActiveIndex: 0,
   chainPathQuery: "",
-  sharedAncestorQuery: "",
   detailSectionOpen: {},
   sharedAncestorsOpen: null,
   sharedAncestorsSelectionKind: null,
@@ -54,8 +56,6 @@ const state = {
   selectionChipKey: "none",
   detailFacultyLimit: DETAIL_FACULTY_INITIAL_COUNT,
   detailFacultyKey: "none",
-  relationshipPairKey: "none",
-  relationshipAutoOpened: false,
   graphNodes: [],
   nodePositions: new Map(),
   graphBounds: { left: 0, top: 0, right: 1, bottom: 1, width: 1, height: 1 },
@@ -71,8 +71,6 @@ const state = {
   pointerMoved: false,
   pointerStart: { x: 0, y: 0 },
   viewStart: { x: 0, y: 0 },
-  activePointers: new Map(),
-  pinchStart: null,
   overviewTransform: null,
   isApplyingUrlState: false,
 };
@@ -81,7 +79,6 @@ const els = {
   appShell: document.querySelector(".app-shell"),
   sourceRow: document.querySelector("#sourceRow"),
   viewTabs: Array.from(document.querySelectorAll(".view-tabs button")),
-  focusButtons: Array.from(document.querySelectorAll("[data-focus-mode]")),
   areaMenu: document.querySelector("#areaMenu"),
   areaMenuButton: document.querySelector("#areaMenuButton"),
   areaMenuCurrent: document.querySelector("#areaMenuCurrent"),
@@ -103,22 +100,11 @@ const els = {
   graphSelectionCard: document.querySelector("#graphSelectionCard"),
   selectionChips: document.querySelector("#selectionChips"),
   loadingState: document.querySelector("#loadingState"),
-  minShared: document.querySelector("#minShared"),
-  minSharedLabel: document.querySelector("#minSharedLabel"),
-  visibleLimit: document.querySelector("#visibleLimit"),
-  visibleLimitLabel: document.querySelector("#visibleLimitLabel"),
-  graphControlsPanel: document.querySelector("#graphControlsPanel"),
-  zoomOut: document.querySelector("#zoomOut"),
-  zoomIn: document.querySelector("#zoomIn"),
-  fitGraph: document.querySelector("#fitGraph"),
-  fitAllGraph: document.querySelector("#fitAllGraph"),
-  focusFaculty: document.querySelector("#focusFaculty"),
-  focusSelectedPaths: document.querySelector("#focusSelectedPaths"),
-  resetGraph: document.querySelector("#resetGraph"),
+  questionStrip: document.querySelector("#questionStrip"),
+  graphDensityNote: document.querySelector("#graphDensityNote"),
+  floatingZoomButtons: Array.from(document.querySelectorAll("[data-zoom-action]")),
   sharedAncestorsPanel: document.querySelector("#sharedAncestorsPanel"),
   sharedAncestorsSummary: document.querySelector("#sharedAncestorsSummary"),
-  ancestorTableSearch: document.querySelector("#ancestorTableSearch"),
-  ancestorTableStatus: document.querySelector("#ancestorTableStatus"),
   dataFootnote: document.querySelector("#dataFootnote"),
   detailBackdrop: document.querySelector("#detailBackdrop"),
   backToGroupView: document.querySelector("#backToGroupView"),
@@ -151,25 +137,11 @@ const OSU_COLORS = {
   grayDark40: "#646a6e",
   grayDark60: "#3f4443",
   grayDark80: "#212325",
+  shared: "#00707a",
+  sharedDark: "#004f56",
+  sharedLight: "#5f9ea5",
   white: "#ffffff",
 };
-
-function readStoredBoolean(key, fallback = false) {
-  try {
-    const value = window.localStorage.getItem(key);
-    return value === null ? fallback : value === "true";
-  } catch (_error) {
-    return fallback;
-  }
-}
-
-function storeBoolean(key, value) {
-  try {
-    window.localStorage.setItem(key, String(Boolean(value)));
-  } catch (_error) {
-    // Preferences are nice-to-have only.
-  }
-}
 
 function hexToBigInt(hex) {
   return BigInt(`0x${hex || "0"}`);
@@ -194,6 +166,88 @@ function isInferredYear(person) {
   return person?.year_kind === "inferred";
 }
 
+function median(values) {
+  if (!values.length) {
+    return null;
+  }
+  const sorted = values.slice().sort((a, b) => a - b);
+  const middle = Math.floor(sorted.length / 2);
+  return sorted.length % 2
+    ? sorted[middle]
+    : (sorted[middle - 1] + sorted[middle]) / 2;
+}
+
+function estimatedYearForIndex(personIndex) {
+  const year = state.estimatedYears.get(personIndex);
+  return Number.isFinite(year) ? year : null;
+}
+
+function placementYearForIndex(personIndex) {
+  const directYear = yearNumber(state.people[personIndex]);
+  if (Number.isFinite(directYear)) {
+    return directYear;
+  }
+  return estimatedYearForIndex(personIndex);
+}
+
+function estimateMissingYears() {
+  const directYears = new Map();
+  const placementYears = new Map();
+  state.people.forEach((person, personIndex) => {
+    const year = yearNumber(person);
+    if (Number.isFinite(year)) {
+      directYears.set(personIndex, year);
+      placementYears.set(personIndex, year);
+    }
+  });
+
+  const estimatedYears = new Map();
+  for (let pass = 0; pass < 16; pass += 1) {
+    const proposals = new Map();
+    const addProposal = (personIndex, year) => {
+      if (
+        directYears.has(personIndex) ||
+        !Number.isFinite(year) ||
+        year < PLACEMENT_YEAR_MIN ||
+        year > PLACEMENT_YEAR_MAX
+      ) {
+        return;
+      }
+      if (!proposals.has(personIndex)) {
+        proposals.set(personIndex, []);
+      }
+      proposals.get(personIndex).push(year);
+    };
+
+    state.edges.forEach(([advisorIndex, studentIndex]) => {
+      const advisorYear = placementYears.get(advisorIndex);
+      const studentYear = placementYears.get(studentIndex);
+      if (!Number.isFinite(advisorYear) && Number.isFinite(studentYear)) {
+        addProposal(advisorIndex, studentYear - PLACEMENT_YEAR_OFFSET);
+      }
+      if (Number.isFinite(advisorYear) && !Number.isFinite(studentYear)) {
+        addProposal(studentIndex, advisorYear + PLACEMENT_YEAR_OFFSET);
+      }
+    });
+
+    let changed = false;
+    proposals.forEach((years, personIndex) => {
+      const proposed = Math.round(clamp(median(years), PLACEMENT_YEAR_MIN, PLACEMENT_YEAR_MAX));
+      const previous = placementYears.get(personIndex);
+      if (!Number.isFinite(previous) || Math.abs(previous - proposed) > 1) {
+        placementYears.set(personIndex, proposed);
+        estimatedYears.set(personIndex, proposed);
+        changed = true;
+      }
+    });
+    if (!changed) {
+      break;
+    }
+  }
+
+  return estimatedYears;
+}
+
 function personDegreeYear(person) {
   if (!person) {
     return "";
@@ -201,11 +255,19 @@ function personDegreeYear(person) {
   return person.degree_year || (isInferredYear(person) ? "" : person.year || "");
 }
 
+function countryLabel(country) {
+  const labels = {
+    UnitedKingdom: "United Kingdom",
+    UnitedStates: "United States",
+  };
+  return labels[country] || country || "";
+}
+
 function personDegreeCountry(person) {
   if (!person) {
     return "";
   }
-  return formatCountryName(person.degree_country || (isInferredYear(person) ? "" : person.country || ""));
+  return countryLabel(person.degree_country || (isInferredYear(person) ? "" : person.country || ""));
 }
 
 function personDegreeLabel(person) {
@@ -213,30 +275,32 @@ function personDegreeLabel(person) {
   return parts.join(", ");
 }
 
-function formatCountryName(value) {
-  return String(value || "").replace(/([a-z])([A-Z])/g, "$1 $2");
-}
-
-function facultyPhdSourceDetail(faculty) {
-  const profileText = String(faculty?.osu_phd_from_profile || "").trim();
-  if (!profileText || /^not listed\b/i.test(profileText)) {
-    return "from genealogy record";
-  }
-  return profileText;
-}
-
-function graphYearLabel(person) {
+function graphYearLabel(person, personIndex = null) {
   if (!person?.year) {
-    return "";
+    const estimatedYear = Number.isInteger(personIndex) ? estimatedYearForIndex(personIndex) : null;
+    return estimatedYear ? `placed near ${estimatedYear}` : "";
   }
   return isInferredYear(person) ? `placed near ${person.year}` : person.year;
 }
 
-function tableYearLabel(person) {
+function tableYearLabel(person, personIndex = null) {
   if (!person?.year) {
-    return "";
+    const estimatedYear = Number.isInteger(personIndex) ? estimatedYearForIndex(personIndex) : null;
+    return estimatedYear ? `~${estimatedYear}` : "";
   }
   return isInferredYear(person) ? `~${person.year}` : person.year;
+}
+
+function tableYearTitle(person, personIndex = null) {
+  if (isInferredYear(person)) {
+    return "Estimated graph placement year";
+  }
+  if (yearNumber(person)) {
+    return "Degree year from the genealogy record";
+  }
+  return estimatedYearForIndex(personIndex)
+    ? "Approximate placement from dated advisor and student records"
+    : "No year in the genealogy record";
 }
 
 function clamp(value, min, max) {
@@ -274,12 +338,12 @@ function textMatchesSearch(value, query) {
   return !tokens.length || tokens.every((token) => normalized.includes(token));
 }
 
-function personMeta(person) {
+function personMeta(person, personIndex = null) {
   const degree = personDegreeLabel(person);
   if (degree) {
     return degree;
   }
-  return graphYearLabel(person) || "";
+  return graphYearLabel(person, personIndex) || "";
 }
 
 function snapshotDateLabel() {
@@ -358,6 +422,7 @@ function initializeData(payload) {
   state.unresolvedFaculty = payload.unresolved_faculty || [];
   state.edges = payload.edges;
   state.peopleMasks = state.people.map((person) => hexToBigInt(person.faculty_mask));
+  state.estimatedYears = estimateMissingYears();
   const dataGroups = Object.values(payload.faculty_groups || {}).sort(
     (a, b) => b.faculty_indices.length - a.faculty_indices.length || a.label.localeCompare(b.label),
   );
@@ -412,6 +477,22 @@ function isCustomSelection() {
   return !sameFacultySet(activeFacultyIndices(), groupFacultyIndices());
 }
 
+function isIntentionalFacultyComparison(active = activeFacultyIndices()) {
+  return state.selectedAncestorIndex === null && active.length > 1 && isCustomSelection();
+}
+
+function isDefaultTwoFacultyComparison(active = activeFacultyIndices()) {
+  return isIntentionalFacultyComparison(active) && active.length === 2 && state.selectedNodeIndex === null;
+}
+
+function isGroupLineageView() {
+  return state.selectedAncestorIndex === null && !isCustomSelection();
+}
+
+function isFullLineageSelection(facultyIndices = activeFacultyIndices()) {
+  return state.selectedAncestorIndex === null && facultyIndices.length > 0;
+}
+
 function selectionTitle() {
   if (state.selectedAncestorIndex !== null) {
     const person = state.people[state.selectedAncestorIndex];
@@ -458,21 +539,6 @@ function setActiveView(view, shouldRender = true) {
   }
 }
 
-function setFocusMode(mode, fitMode = "width", shouldRender = true) {
-  if (!VALID_FOCUS_MODES.has(mode)) {
-    return;
-  }
-  state.focusMode = mode;
-  state.hoveredNodeIndex = null;
-  state.pendingCenterNodeIndex = null;
-  state.needsFit = fitMode;
-  hideTooltip();
-  syncNavigation();
-  if (shouldRender) {
-    render();
-  }
-}
-
 function selectGraphNode(personIndex, options = {}) {
   if (personIndex === null || personIndex === undefined || !state.people[personIndex]) {
     state.selectedNodeIndex = null;
@@ -493,17 +559,10 @@ function showAdvisorPathsForNode(personIndex) {
   if (personIndex === null || personIndex === undefined) {
     return;
   }
-  selectGraphNode(personIndex, { focusMode: "path", fitMode: "width" });
-}
-
-function resetGraphView() {
-  state.focusMode = "common";
-  state.selectedNodeIndex = null;
-  state.hoveredNodeIndex = null;
-  state.pendingCenterNodeIndex = null;
-  state.needsFit = "width";
-  hideTooltip();
-  render();
+  state.detailSectionOpen.chains = true;
+  state.activeView = "graph";
+  state.detailsOpen = false;
+  selectGraphNode(personIndex);
 }
 
 function clearSelectedNode(shouldRender = true) {
@@ -511,9 +570,6 @@ function clearSelectedNode(shouldRender = true) {
   state.hoveredNodeIndex = null;
   state.pendingCenterNodeIndex = null;
   state.needsFit = "all";
-  if (state.focusMode === "path") {
-    state.focusMode = "common";
-  }
   hideTooltip();
   if (shouldRender) {
     render();
@@ -538,9 +594,6 @@ function backToGroupView(shouldRender = true) {
 
 function setDetailsOpen(isOpen, shouldRender = true) {
   state.detailsOpen = Boolean(isOpen);
-  if (!state.detailsOpen) {
-    state.relationshipAutoOpened = true;
-  }
   if (state.detailsOpen) {
     state.activeView = "graph";
   }
@@ -556,20 +609,9 @@ function syncNavigation() {
   if (els.detailBackdrop) {
     els.detailBackdrop.hidden = !state.detailsOpen;
   }
-  if (els.graphControlsPanel && els.graphControlsPanel.open !== state.graphControlsOpen) {
-    els.graphControlsPanel.open = state.graphControlsOpen;
-  }
   els.viewTabs.forEach((button) => {
     button.setAttribute("aria-pressed", String(button.dataset.view === state.activeView));
   });
-  els.focusButtons.forEach((button) => {
-    button.setAttribute("aria-pressed", String(button.dataset.focusMode === state.focusMode));
-  });
-  if (els.focusSelectedPaths) {
-    const canShowSelectedPaths = state.selectedNodeIndex !== null;
-    els.focusSelectedPaths.disabled = !canShowSelectedPaths;
-    els.focusSelectedPaths.setAttribute("aria-pressed", String(canShowSelectedPaths && state.focusMode === "path"));
-  }
   if (els.clearSelectedNode) {
     els.clearSelectedNode.disabled = state.selectedNodeIndex === null;
   }
@@ -578,31 +620,12 @@ function syncNavigation() {
   }
 }
 
-function isMobileDetailsLayout() {
-  return window.matchMedia("(max-width: 860px)").matches;
-}
-
-function isCoarsePointer() {
-  return window.matchMedia("(pointer: coarse)").matches;
-}
-
-function syncMobileRelationshipDetails() {
-  const active = activeFacultyIndices();
-  const pairKey = active.length === 2 ? active.slice().sort((a, b) => a - b).join("-") : "none";
-  if (pairKey !== state.relationshipPairKey) {
-    state.relationshipPairKey = pairKey;
-    state.relationshipAutoOpened = false;
+function closeDetailsView(shouldRender = true) {
+  if (state.activeView === "details") {
+    setActiveView("graph", shouldRender);
+    return;
   }
-  if (
-    pairKey !== "none" &&
-    state.activeView === "graph" &&
-    isMobileDetailsLayout() &&
-    !state.detailsOpen &&
-    !state.relationshipAutoOpened
-  ) {
-    state.detailsOpen = true;
-    state.relationshipAutoOpened = true;
-  }
+  setDetailsOpen(false, shouldRender);
 }
 
 function facultyIndexByMgpId(id) {
@@ -637,21 +660,8 @@ function currentShareUrl() {
       .filter(Boolean);
     params.set("faculty", ids.length ? ids.join(",") : "none");
   }
-  if (state.focusMode !== "common") {
-    params.set("focus", state.focusMode);
-  }
   if (state.activeView !== "graph") {
     params.set("view", state.activeView);
-  }
-  if (state.minShared !== 2) {
-    params.set("min", String(state.minShared));
-  }
-  const defaultLimit = isMobileDetailsLayout() ? MOBILE_VISIBLE_ANCESTORS : DEFAULT_VISIBLE_ANCESTORS;
-  if (state.visibleAncestorLimit !== defaultLimit) {
-    params.set("limit", String(state.visibleAncestorLimit));
-  }
-  if (state.selectedNodeIndex !== null) {
-    params.set("node", state.people[state.selectedNodeIndex]?.id || "");
   }
   return url.toString();
 }
@@ -668,11 +678,9 @@ function applyUrlState() {
   state.isApplyingUrlState = true;
 
   const view = params.get("view");
-  if (view === "details") {
-    state.activeView = "graph";
-    state.detailsOpen = true;
-  } else if (view && VALID_VIEWS.has(view)) {
+  if (view && VALID_VIEWS.has(view)) {
     state.activeView = view;
+    state.detailsOpen = false;
   }
 
   const focus = params.get("focus");
@@ -704,27 +712,6 @@ function applyUrlState() {
       }
       markGraphChanged("width");
     }
-  }
-
-  const min = Number(params.get("min"));
-  if (Number.isFinite(min) && min >= 1) {
-    state.minShared = min;
-  }
-
-  const limit = Number(params.get("limit"));
-  if (Number.isFinite(limit) && limit >= 1) {
-    state.visibleAncestorLimit = Math.floor(limit);
-  } else if (isMobileDetailsLayout()) {
-    state.visibleAncestorLimit = Math.min(state.visibleAncestorLimit, MOBILE_VISIBLE_ANCESTORS);
-  }
-
-  const nodeId = params.get("node");
-  const nodeIndex = nodeId ? personIndexByMgpId(nodeId) : null;
-  if (nodeIndex !== null) {
-    state.selectedNodeIndex = nodeIndex;
-    state.pendingCenterNodeIndex = nodeIndex;
-  } else if (isMobileDetailsLayout()) {
-    state.needsFit = "faculty";
   }
 
   state.isApplyingUrlState = false;
@@ -830,6 +817,7 @@ function applyAncestorPerson(personIndex, shouldRender = true) {
   state.graphSearchActiveIndex = 0;
   state.selectedFaculty = new Set(descendantFacultyIndices(personIndex));
   state.minShared = Math.min(2, Math.max(1, state.selectedFaculty.size));
+  state.focusMode = "common";
   markGraphChanged("width");
   state.selectedNodeIndex = personIndex;
   state.pendingCenterNodeIndex = personIndex;
@@ -898,6 +886,22 @@ function facultyNameLink(faculty, className = "") {
   `;
 }
 
+function facultyGraphButton(faculty, className = "") {
+  const personIndex = Number(faculty?.person_index);
+  const classAttr = className ? ` class="${className}"` : "";
+  if (!Number.isInteger(personIndex)) {
+    return `<span${classAttr}>${escapeHtml(faculty?.osu_name || "Faculty")}</span>`;
+  }
+  return `
+    <button
+      type="button"
+      ${classAttr}
+      data-graph-person-index="${personIndex}"
+      title="Center ${escapeHtml(faculty.osu_name)} in the graph"
+    >${escapeHtml(faculty.osu_name)}</button>
+  `;
+}
+
 function facultyAreaLabels(faculty, limit = 5) {
   const labels = (faculty.groups || [])
     .map((groupId) => state.groupLabels.get(groupId))
@@ -924,12 +928,38 @@ function advisorNamesForPerson(person) {
 
 function summaryCardHtml(card) {
   const value = card.valueHtml || escapeHtml(card.value);
-  const detail = card.detailHtml || escapeHtml(card.detail);
+  const detail = card.detailHtml ?? (
+    card.detail === undefined || card.detail === null || card.detail === ""
+      ? ""
+      : escapeHtml(card.detail)
+  );
   return `
     <div class="summary-card${card.className ? ` ${escapeHtml(card.className)}` : ""}">
       <span>${escapeHtml(card.label)}</span>
       <strong>${value}</strong>
-      <em>${detail}</em>
+      ${detail ? `<em>${detail}</em>` : ""}
+    </div>
+  `;
+}
+
+function answerCalloutHtml(text, detail = "") {
+  return `
+    <div class="answer-callout">
+      <strong>${escapeHtml(text)}</strong>
+      ${detail ? `<span>${escapeHtml(detail)}</span>` : ""}
+    </div>
+  `;
+}
+
+function answerCalloutActionHtml(prefix, label, suffix, detail, action) {
+  return `
+    <div class="answer-callout">
+      <strong>
+        ${escapeHtml(prefix)}
+        <button type="button" class="summary-link-button" data-summary-action="${escapeHtml(action)}">${escapeHtml(label)}</button>
+        ${escapeHtml(suffix)}
+      </strong>
+      ${detail ? `<span>${escapeHtml(detail)}</span>` : ""}
     </div>
   `;
 }
@@ -983,17 +1013,26 @@ function graphSearchRows() {
     if (seen.has(personIndex)) {
       return;
     }
+    const estimatedYear = estimatedYearForIndex(personIndex);
     const haystack = normalizeSearchText(
-      `${person.name} ${person.degree_year || ""} ${person.year} ${person.year_kind || ""} ${person.degree_country || ""} ${formatCountryName(person.degree_country)} ${person.country} ${formatCountryName(person.country)}`,
+      `${person.name} ${person.degree_year || ""} ${person.year} ${estimatedYear || ""} ${person.year_kind || ""} ${person.degree_country || ""} ${person.country} ${countryLabel(person.degree_country)} ${countryLabel(person.country)}`,
     );
     if (!terms.every((term) => haystack.includes(term))) {
       return;
     }
+    const scopedDescendants = descendantFacultyIndices(personIndex).length;
+    const fullDescendants = descendantFacultyIndices(
+      personIndex,
+      state.faculty.map((faculty) => Number(faculty.faculty_index)),
+    ).length;
+    const descendantHint = scopedDescendants === fullDescendants
+      ? `${scopedDescendants} OSU faculty descendants`
+      : `${scopedDescendants} in ${activeGroup()?.label || "current area"}; ${fullDescendants} OSU faculty descendants`;
     rows.push({
       personIndex,
       label: person.name,
-      meta: "Ancestor",
-      hint: `${personMeta(person) || "genealogy record"} | ${descendantFacultyIndices(personIndex).length} faculty descendants`,
+      meta: "Show descendants",
+      hint: `${descendantHint} | ${personMeta(person, personIndex) || "genealogy record"}`,
       kind: "Ancestor",
       rank: haystack.startsWith(query) ? 2 : 3,
     });
@@ -1008,7 +1047,6 @@ function activateGraphSearchRow(row) {
   if (!row) {
     return;
   }
-  const hadAncestorFilter = state.selectedAncestorIndex !== null;
   state.graphSearchQuery = "";
   state.graphSearchActiveIndex = 0;
   state.selectedAncestorIndex = null;
@@ -1018,9 +1056,21 @@ function activateGraphSearchRow(row) {
   if (row.kind === "Faculty" && Number.isInteger(row.facultyIndex)) {
     state.selectedFaculty = new Set([row.facultyIndex]);
     state.minShared = 1;
-  } else if (hadAncestorFilter || !activeFacultyIndices().length) {
-    state.selectedFaculty = new Set(groupFacultyIndices());
-    state.minShared = Math.min(2, Math.max(1, state.selectedFaculty.size));
+    markGraphChanged("width");
+    state.selectedNodeIndex = row.personIndex;
+    state.pendingCenterNodeIndex = row.personIndex;
+    setActiveView("graph", false);
+    render();
+    return;
+  }
+
+  if (row.kind === "Ancestor") {
+    applyAncestorPerson(row.personIndex, false);
+    state.focusMode = "common";
+    state.needsFit = "width";
+    setActiveView("graph", false);
+    render();
+    return;
   }
 
   markGraphChanged("width");
@@ -1077,6 +1127,12 @@ function renderGraphAncestorPresets() {
   if (!els.graphAncestorPresets) {
     return;
   }
+  if (state.selectedAncestorIndex !== null) {
+    els.graphAncestorPresets.hidden = true;
+    els.graphAncestorPresets.innerHTML = "";
+    return;
+  }
+  els.graphAncestorPresets.hidden = false;
   els.graphAncestorPresets.innerHTML = GRAPH_ANCESTOR_PRESETS
     .map((preset) => {
       const personIndex = personIndexByMgpId(preset.pid);
@@ -1100,10 +1156,21 @@ function renderGraphAncestorPresets() {
     button.addEventListener("click", () => {
       const personIndex = Number(button.dataset.personIndex);
       if (Number.isInteger(personIndex)) {
-        applyAncestorPerson(personIndex);
+        applyAncestorPerson(personIndex, false);
+        state.focusMode = "common";
+        state.needsFit = "width";
+        render();
       }
     });
   });
+}
+
+function renderQuestionStrip(_graphData) {
+  if (!els.questionStrip) {
+    return;
+  }
+  els.questionStrip.hidden = true;
+  els.questionStrip.innerHTML = "";
 }
 
 function renderFaculty() {
@@ -1163,8 +1230,15 @@ function commonAncestors() {
   if (!facultyIndices.length) {
     return [];
   }
+  const minShared = facultyIndices.length <= 1 ? 1 : facultyIndices.length;
+  return ancestorRowsForFaculty(facultyIndices, minShared);
+}
+
+function ancestorRowsForFaculty(facultyIndices, minShared) {
+  if (!facultyIndices.length) {
+    return [];
+  }
   const facultyMask = maskForFaculty(facultyIndices);
-  const minShared = Math.max(1, Math.min(state.minShared, facultyIndices.length));
   const rows = [];
 
   state.people.forEach((person, personIndex) => {
@@ -1194,6 +1268,7 @@ function commonAncestors() {
       matchedCount,
       maxDistance: Math.max(...distances),
       totalDistance: distances.reduce((sum, distance) => sum + distance, 0),
+      yearValue: placementYearForIndex(personIndex) || 0,
       matchedFaculty,
     });
   });
@@ -1203,34 +1278,67 @@ function commonAncestors() {
       b.matchedCount - a.matchedCount ||
       a.maxDistance - b.maxDistance ||
       a.totalDistance - b.totalDistance ||
+      b.yearValue - a.yearValue ||
       a.name.localeCompare(b.name),
   );
 }
 
-function maxSharedWithAnyCommonAncestor(facultyIndices = activeFacultyIndices()) {
-  if (!facultyIndices.length) {
-    return 1;
+function recentSharedByMostAncestor(facultyIndices = activeFacultyIndices()) {
+  if (facultyIndices.length < 2) {
+    return null;
+  }
+  const rows = ancestorRowsForFaculty(facultyIndices, 1)
+    .filter((row) => row.matchedCount < facultyIndices.length);
+  if (!rows.length) {
+    return null;
+  }
+  const maxMatched = Math.max(...rows.map((row) => row.matchedCount));
+  return rows
+    .filter((row) => row.matchedCount === maxMatched)
+    .sort((a, b) =>
+      b.yearValue - a.yearValue ||
+      a.maxDistance - b.maxDistance ||
+      a.totalDistance - b.totalDistance ||
+      a.name.localeCompare(b.name),
+    )[0] || null;
+}
+
+function nearestCommonAncestor(facultyIndices = activeFacultyIndices()) {
+  if (facultyIndices.length < 2) {
+    return null;
   }
 
   const facultyMask = maskForFaculty(facultyIndices);
-  let maxShared = 1;
-  state.peopleMasks.forEach((personMask, personIndex) => {
-    const matchedMask = personMask & facultyMask;
-    const matchedCount = bitCount(matchedMask);
-    if (matchedCount <= maxShared) {
+  const candidates = [];
+  state.people.forEach((person, personIndex) => {
+    if ((state.peopleMasks[personIndex] & facultyMask) !== facultyMask) {
       return;
     }
 
     const distanceMap = distanceMapForPerson(personIndex);
-    const hasDistance = facultyIndices.some(
-      (index) => (matchedMask & (1n << BigInt(index))) && Number.isFinite(distanceMap.get(index)),
-    );
-    if (hasDistance) {
-      maxShared = matchedCount;
+    const distances = facultyIndices.map((index) => distanceMap.get(index));
+    if (!distances.every(Number.isFinite)) {
+      return;
     }
+
+    candidates.push({
+      personIndex,
+      person,
+      distances,
+      maxDistance: Math.max(...distances),
+      totalDistance: distances.reduce((sum, distance) => sum + distance, 0),
+      yearValue: placementYearForIndex(personIndex) || 0,
+    });
   });
 
-  return Math.max(1, Math.min(facultyIndices.length, maxShared));
+  candidates.sort(
+    (a, b) =>
+      a.maxDistance - b.maxDistance ||
+      a.totalDistance - b.totalDistance ||
+      b.yearValue - a.yearValue ||
+      a.person.name.localeCompare(b.person.name),
+  );
+  return candidates[0] || null;
 }
 
 function lineagePersonIndices() {
@@ -1241,6 +1349,66 @@ function lineagePersonIndices() {
   return state.people
     .map((_person, index) => index)
     .filter((index) => (state.peopleMasks[index] & activeMask) !== 0n);
+}
+
+function revealScaleForGraph() {
+  if (state.needsFit === "width" || state.needsFit === "all") {
+    return MIN_SCALE;
+  }
+  return state.view.scale;
+}
+
+function effectiveVisibleAncestorLimit(totalAvailable) {
+  const requested = Math.min(state.visibleAncestorLimit, Math.max(0, totalAvailable));
+  if (requested <= ZOOM_REVEAL_MIN_ANCESTORS) {
+    return requested;
+  }
+  if (state.focusMode !== "common") {
+    return requested;
+  }
+
+  const revealScale = revealScaleForGraph();
+  const progress = clamp(
+    (revealScale - MIN_SCALE) / Math.max(0.01, ZOOM_REVEAL_FULL_SCALE - MIN_SCALE),
+    0,
+    1,
+  );
+  const eased = progress * progress;
+  const floor = Math.min(requested, ZOOM_REVEAL_MIN_ANCESTORS);
+  return Math.max(1, Math.round(floor + (requested - floor) * eased));
+}
+
+function selectVisibleCommonAncestors(common, limit) {
+  const requested = Math.max(0, Math.min(limit, common.length));
+  if (requested >= common.length) {
+    return common.slice();
+  }
+  const selected = new Map();
+
+  function add(row) {
+    if (row && selected.size < requested && !selected.has(row.personIndex)) {
+      selected.set(row.personIndex, row);
+    }
+  }
+
+  common.slice(0, Math.max(4, Math.ceil(requested * 0.5))).forEach(add);
+
+  const bands = [
+    [1500, 1700],
+    [1700, 1800],
+    [1800, 1900],
+    [1900, 2001],
+  ];
+  bands.forEach(([start, end]) => {
+    const representative = common.find((row) => {
+      const year = placementYearForIndex(row.personIndex);
+      return year && year >= start && year < end && !selected.has(row.personIndex);
+    });
+    add(representative);
+  });
+
+  common.forEach(add);
+  return Array.from(selected.values());
 }
 
 function edgeKey(advisorIndex, studentIndex) {
@@ -1324,7 +1492,7 @@ function syncDetailFacultyLimit(personIndex, facultyIndices = activeFacultyIndic
 
 function pathBundleForAncestor(ancestorIndex, facultyIndices = activeFacultyIndices(), limit = 8) {
   if (ancestorIndex === null || ancestorIndex === undefined) {
-    return { rows: [], totalRows: 0, nodeSet: new Set(), edgeSet: new Set() };
+    return { rows: [], totalRows: 0 };
   }
 
   const descendantSet = new Set(descendantFacultyIndices(ancestorIndex, facultyIndices));
@@ -1346,18 +1514,68 @@ function pathBundleForAncestor(ancestorIndex, facultyIndices = activeFacultyIndi
     .sort((a, b) => a.steps - b.steps || a.faculty.osu_name.localeCompare(b.faculty.osu_name));
   const rows = allRows.slice(0, limit);
 
-  const nodeSet = new Set([ancestorIndex]);
+  return { rows, totalRows: allRows.length };
+}
+
+function connectorBundleForVisibleAncestors(visibleCommon, facultyIndices = activeFacultyIndices()) {
+  const nodeSet = new Set();
   const edgeSet = new Set();
-  rows.forEach((row) => {
-    row.path.forEach((personIndex, index) => {
+  if (!visibleCommon.length || !facultyIndices.length) {
+    return { nodeSet, edgeSet };
+  }
+
+  function addPath(facultyIndex, ancestorIndex) {
+    const faculty = state.faculty[facultyIndex];
+    const facultyPersonIndex = Number(faculty?.person_index);
+    if (!Number.isInteger(facultyPersonIndex)) {
+      return;
+    }
+
+    const path = advisorPathToAncestor(facultyPersonIndex, ancestorIndex);
+    if (!path) {
+      return;
+    }
+
+    path.forEach((personIndex, index) => {
       nodeSet.add(personIndex);
       if (index > 0) {
-        edgeSet.add(edgeKey(row.path[index - 1], personIndex));
+        edgeSet.add(edgeKey(path[index - 1], personIndex));
       }
     });
+  }
+
+  const distanceMaps = new Map();
+  function rowDistance(row, facultyIndex) {
+    let distanceMap = distanceMaps.get(row.personIndex);
+    if (!distanceMap) {
+      distanceMap = distanceMapForPerson(row.personIndex);
+      distanceMaps.set(row.personIndex, distanceMap);
+    }
+    return distanceMap.get(facultyIndex);
+  }
+
+  facultyIndices.forEach((facultyIndex) => {
+    const nearest = visibleCommon
+      .filter((row) => row.matchedFaculty.includes(facultyIndex))
+      .map((row) => ({ row, distance: rowDistance(row, facultyIndex) }))
+      .filter((entry) => Number.isFinite(entry.distance))
+      .sort((a, b) => a.distance - b.distance || a.row.name.localeCompare(b.row.name))[0];
+    if (nearest) {
+      addPath(facultyIndex, nearest.row.personIndex);
+    }
   });
 
-  return { rows, totalRows: allRows.length, nodeSet, edgeSet };
+  visibleCommon.forEach((row) => {
+    const representative = row.matchedFaculty
+      .map((facultyIndex) => ({ facultyIndex, distance: rowDistance(row, facultyIndex) }))
+      .filter((entry) => Number.isFinite(entry.distance))
+      .sort((a, b) => a.distance - b.distance || state.faculty[a.facultyIndex].osu_name.localeCompare(state.faculty[b.facultyIndex].osu_name))[0];
+    if (representative) {
+      addPath(representative.facultyIndex, row.personIndex);
+    }
+  });
+
+  return { nodeSet, edgeSet };
 }
 
 function ordinal(value) {
@@ -1484,7 +1702,7 @@ function twoFacultyRelationship() {
       rightDistance,
       maxDistance: Math.max(leftDistance, rightDistance),
       totalDistance: leftDistance + rightDistance,
-      year: yearNumber(person) || 0,
+      year: placementYearForIndex(personIndex) || 0,
     });
   });
 
@@ -1525,71 +1743,51 @@ function advisorStepLabel(steps) {
   return steps === 1 ? "1 advisor link" : `${steps} advisor links`;
 }
 
-function relationshipExplanation(relationship) {
-  if (!relationship.ancestor) {
-    return "No shared academic ancestor appears in this graph for this pair.";
-  }
-  if (relationship.leftDistance === 0 || relationship.rightDistance === 0) {
-    return "One selected faculty member lies directly in the academic ancestry of the other.";
-  }
-  if (relationship.leftDistance === 1 && relationship.rightDistance === 1) {
-    return "They share the same academic advisor.";
-  }
-  return "The relationship is named from their nearest shared academic ancestor in this graph.";
-}
-
 function visibleGraph() {
   const facultyIndices = activeFacultyIndices();
   const activeFacultyPersonIndices = new Set(
     facultyIndices.map((index) => state.faculty[index].person_index).filter(Number.isInteger),
   );
   const common = commonAncestors();
-  let visibleCommon = common.slice(0, state.visibleAncestorLimit);
-  const chosen = state.focusMode === "path" ? new Set() : new Set(activeFacultyPersonIndices);
+  const fullLineage = isFullLineageSelection(facultyIndices);
+  const desiredVisibleAncestorLimit = fullLineage || facultyIndices.length <= 2
+    ? common.length
+    : Math.min(state.visibleAncestorLimit, common.length);
+  const appliedVisibleAncestorLimit = fullLineage || facultyIndices.length <= 2
+    ? desiredVisibleAncestorLimit
+    : effectiveVisibleAncestorLimit(common.length);
+  let visibleCommon = fullLineage
+    ? common.slice()
+    : selectVisibleCommonAncestors(common, appliedVisibleAncestorLimit);
+  const chosen = fullLineage
+    ? new Set(lineagePersonIndices())
+    : new Set(activeFacultyPersonIndices);
   const selectedNodeIsFaculty = state.selectedNodeIndex !== null && activeFacultyPersonIndices.has(state.selectedNodeIndex);
-  const explicitChainAnchorIndex = state.focusMode === "path"
-    ? state.selectedNodeIndex ?? state.selectedAncestorIndex ?? null
-    : state.selectedAncestorIndex ??
-      (selectedNodeIsFaculty ? null : state.selectedNodeIndex) ??
-      null;
-  const chainAnchorIndex = explicitChainAnchorIndex ?? (common[0]?.personIndex ?? null);
-  let chainRows = [];
-  let chainTotalRows = 0;
-  let pathNodeSet = new Set();
-  let pathEdgeSet = new Set();
+  const defaultComparisonAnchor = state.selectedNodeIndex === null && state.selectedAncestorIndex === null && facultyIndices.length > 1
+    ? nearestCommonAncestor(facultyIndices)?.personIndex ?? recentSharedByMostAncestor(facultyIndices)?.personIndex ?? null
+    : null;
+  const chainAnchorIndex = state.selectedAncestorIndex ??
+    (state.selectedNodeIndex === null ? defaultComparisonAnchor : selectedNodeIsFaculty ? null : state.selectedNodeIndex) ??
+    null;
   syncAdvisorPathLimit(chainAnchorIndex, facultyIndices);
-  const advisorPathLimit = Math.max(ADVISOR_PATH_INITIAL_COUNT, state.advisorPathLimit);
 
   if (state.focusMode === "faculty") {
     visibleCommon = [];
-  } else if (state.focusMode === "descendants" && state.selectedAncestorIndex !== null) {
-    visibleCommon = common.filter((row) => row.personIndex === state.selectedAncestorIndex);
-    const pathBundle = pathBundleForAncestor(
-      state.selectedAncestorIndex,
-      facultyIndices,
-      Math.min(advisorPathLimit, facultyIndices.length),
-    );
-    chainRows = pathBundle.rows;
-    chainTotalRows = pathBundle.totalRows;
-    pathNodeSet = pathBundle.nodeSet;
-    pathEdgeSet = pathBundle.edgeSet;
-  } else if (state.focusMode === "path" && chainAnchorIndex !== null) {
-    visibleCommon = common.filter((row) => row.personIndex === chainAnchorIndex);
-    const pathBundle = pathBundleForAncestor(chainAnchorIndex, facultyIndices, Math.min(advisorPathLimit, facultyIndices.length));
-    chainRows = pathBundle.rows;
-    chainTotalRows = pathBundle.totalRows;
-    pathNodeSet = pathBundle.nodeSet;
-    pathEdgeSet = pathBundle.edgeSet;
   }
+  const connectorBundle = fullLineage
+    ? { nodeSet: new Set(), edgeSet: new Set() }
+    : connectorBundleForVisibleAncestors(visibleCommon, facultyIndices);
 
-  if (state.focusMode === "common") {
+  if (fullLineage) {
+    activeFacultyPersonIndices.forEach((personIndex) => chosen.add(personIndex));
+  } else if (state.focusMode === "common") {
     for (const row of visibleCommon) {
       chosen.add(row.personIndex);
     }
   } else {
     visibleCommon.forEach((row) => chosen.add(row.personIndex));
-    pathNodeSet.forEach((personIndex) => chosen.add(personIndex));
   }
+  connectorBundle.nodeSet.forEach((personIndex) => chosen.add(personIndex));
   if (state.selectedAncestorIndex !== null) {
     chosen.add(state.selectedAncestorIndex);
   }
@@ -1604,24 +1802,32 @@ function visibleGraph() {
   const edgeRows = state.edges.filter(
     ([advisorIndex, studentIndex]) => nodeSet.has(advisorIndex) && nodeSet.has(studentIndex),
   );
+  const visibleCommonSet = new Set(visibleCommon.map((row) => row.personIndex));
+  const lineageLabelNodeSet = fullLineage
+    ? new Set(Array.from(nodeSet).filter((personIndex) =>
+      !activeFacultyPersonIndices.has(personIndex) && !visibleCommonSet.has(personIndex)))
+    : new Set();
   return {
     nodes: Array.from(nodeSet),
     edges: edgeRows,
     common,
     visibleCommon,
+    desiredVisibleAncestorLimit,
+    appliedVisibleAncestorLimit,
+    hiddenByZoom: fullLineage || state.focusMode !== "common" ? 0 : Math.max(0, desiredVisibleAncestorLimit - visibleCommon.length),
+    fullLineage,
     activeFacultyPersonIndices,
     chainAnchorIndex,
-    chainRows,
-    chainTotalRows,
-    pathNodeSet,
-    pathEdgeSet,
+    connectorNodeSet: connectorBundle.nodeSet,
+    connectorEdgeSet: connectorBundle.edgeSet,
+    lineageLabelNodeSet,
   };
 }
 
 function renderMetrics(graphData) {
   const active = activeFacultyIndices();
   const lineage = lineagePersonIndices();
-  const commonMetricLabel = active.length === 1 ? "Known Ancestry" : "Shared Ancestors";
+  const commonMetricLabel = active.length === 1 ? "Known Ancestry" : "Shared By All";
   const metricRows = [
     ["Selected Faculty", active.length],
     ["Total Ancestors", lineage.length],
@@ -1637,95 +1843,38 @@ function renderMetrics(graphData) {
     `)
     .join("");
   els.graphTitle.textContent = selectionTitle();
-  const visiblePeopleLabel = graphData.nodes.length === 1 ? "visible person" : "visible people";
+  const selectedAncestor = state.selectedAncestorIndex === null ? null : state.people[state.selectedAncestorIndex];
+  const graphPeopleLabel = graphData.nodes.length === 1 ? "person in graph" : "people in graph";
+  if (selectedAncestor) {
+    const descendantLabel = active.length === 1 ? "faculty descendant" : "faculty descendants";
+    els.graphSubtitle.textContent =
+      `${active.length.toLocaleString()} ${descendantLabel} | ` +
+      `${graphData.nodes.length.toLocaleString()} ${graphPeopleLabel}`;
+    return;
+  }
+
+  if (graphData.fullLineage) {
+    const selectedFacultyLabel = active.length === 1 ? "faculty member" : "faculty";
+    els.graphSubtitle.textContent =
+      `${graphData.nodes.length.toLocaleString()} ${graphPeopleLabel} | ` +
+      `${active.length.toLocaleString()} ${selectedFacultyLabel} | ` +
+      "full lineage graph";
+    return;
+  }
+
   const sharedAncestorLabel = active.length === 1
     ? graphData.visibleCommon.length === 1 ? "total ancestor" : "total ancestors"
-    : graphData.visibleCommon.length === 1 ? "top shared ancestor" : "top shared ancestors";
-  const selectedFacultyLabel = active.length === 1 ? "selected faculty member" : "selected faculty";
+    : graphData.visibleCommon.length === 1 ? "shared-by-all ancestor" : "shared-by-all ancestors";
+  const selectedFacultyLabel = active.length === 1 ? "faculty member" : "faculty";
   els.graphSubtitle.textContent =
-    `${graphData.nodes.length.toLocaleString()} ${visiblePeopleLabel}, ` +
-    `${graphData.visibleCommon.length.toLocaleString()} ${sharedAncestorLabel}, ` +
-    `${active.length.toLocaleString()} ${selectedFacultyLabel}, ` +
-    `${focusViewDescription(active.length)} view`;
+    `${graphData.nodes.length.toLocaleString()} ${graphPeopleLabel} | ` +
+    `${active.length.toLocaleString()} ${selectedFacultyLabel} | ` +
+    `${graphData.visibleCommon.length.toLocaleString()} ${sharedAncestorLabel}`;
 }
 
-function focusModeLabel() {
-  const labels = {
-    common: "Shared",
-    faculty: "Selected",
-    descendants: "Show Descendants",
-    path: "Advisor Paths",
-  };
-  return labels[state.focusMode] || state.focusMode;
-}
-
-function focusViewDescription(activeCount = activeFacultyIndices().length) {
-  const labels = {
-    common: activeCount === 1 ? "ancestry" : "shared ancestor",
-    faculty: "selected faculty",
-    descendants: "descendant",
-    path: "advisor path",
-  };
-  return labels[state.focusMode] || "graph";
-}
-
-function renderCurrentViewSummary(graphData) {
-  const active = activeFacultyIndices();
-  const hasTwoFaculty = active.length === 2;
-  const group = activeGroup();
-  const selectedAncestor = state.selectedAncestorIndex === null ? null : state.people[state.selectedAncestorIndex];
-  const selectedNode = state.selectedNodeIndex === null ? null : state.people[state.selectedNodeIndex];
-  const pathAnchor = graphData.chainAnchorIndex === null ? null : state.people[graphData.chainAnchorIndex];
-  const mode = selectedAncestor
-    ? `Descendants of ${selectedAncestor.name}`
-    : isCustomSelection()
-      ? "Custom faculty selection"
-      : group.label;
-  const parts = [
-    ["Area", group.label],
-    ["Faculty in view", active.length.toLocaleString()],
-    ["Graph", mode],
-    ["View", focusModeLabel()],
-    pathAnchor ? ["Advisor paths", pathAnchor.name] : null,
-    selectedNode ? ["Selected node", selectedNode.name] : null,
-  ].filter(Boolean);
-
-  els.currentViewSummary.innerHTML = `
-    <div class="current-view-items">
-      ${parts.map(([label, value]) => `
-        <span><strong>${escapeHtml(label)}</strong>${escapeHtml(value)}</span>
-      `).join("")}
-    </div>
-    <div class="current-view-actions">
-      <button type="button" class="mobile-graph-action" data-inline-graph-action="zoom-out" aria-label="Zoom out">-</button>
-      <button type="button" class="mobile-graph-action" data-inline-graph-action="zoom-in" aria-label="Zoom in">+</button>
-      <button type="button" class="mobile-graph-action" data-inline-graph-action="fit-all">Full</button>
-      <button type="button" class="mobile-graph-action" data-inline-graph-action="fit-faculty">Faculty</button>
-      <button type="button" id="resetViewInline">Reset view</button>
-      <button type="button" id="openDetailsSheet" class="mobile-details-trigger">${hasTwoFaculty ? "Connection" : "Details"}</button>
-    </div>
-  `;
-  els.currentViewSummary.querySelector("[data-inline-graph-action='zoom-out']")?.addEventListener("click", () => {
-    zoomAt({ x: els.canvas.clientWidth / 2, y: els.canvas.clientHeight / 2 }, 0.82);
-  });
-  els.currentViewSummary.querySelector("[data-inline-graph-action='zoom-in']")?.addEventListener("click", () => {
-    zoomAt({ x: els.canvas.clientWidth / 2, y: els.canvas.clientHeight / 2 }, 1.18);
-  });
-  els.currentViewSummary.querySelector("[data-inline-graph-action='fit-all']")?.addEventListener("click", () => {
-    state.needsFit = "all";
-    drawGraph();
-  });
-  els.currentViewSummary.querySelector("[data-inline-graph-action='fit-faculty']")?.addEventListener("click", () => {
-    state.needsFit = "faculty";
-    drawGraph();
-  });
-  els.currentViewSummary.querySelector("#resetViewInline")?.addEventListener("click", () => {
-    state.needsFit = "all";
-    drawGraph();
-  });
-  els.currentViewSummary.querySelector("#openDetailsSheet")?.addEventListener("click", () => {
-    setDetailsOpen(true);
-  });
+function renderCurrentViewSummary(_graphData) {
+  els.currentViewSummary.hidden = true;
+  els.currentViewSummary.innerHTML = "";
 }
 
 function renderGraphBreadcrumbs() {
@@ -1751,13 +1900,7 @@ function renderGraphBreadcrumbs() {
     `);
   }
 
-  chips.push(`
-    <button type="button" data-crumb-action="common-focus" ${state.focusMode === "common" ? "disabled" : ""}>
-      <span>View</span>${escapeHtml(focusModeLabel())}
-    </button>
-  `);
-
-  if (state.selectedNodeIndex !== null) {
+  if (state.selectedNodeIndex !== null && state.selectedNodeIndex !== state.selectedAncestorIndex) {
     chips.push(`
       <button type="button" data-crumb-action="clear-node">
         <span>Node</span>${escapeHtml(state.people[state.selectedNodeIndex]?.name || "Selected")}
@@ -1778,8 +1921,6 @@ function renderGraphBreadcrumbs() {
         clearAncestorFilter();
       } else if (action === "reset-selection") {
         backToGroupView();
-      } else if (action === "common-focus") {
-        setFocusMode("common", "width");
       } else if (action === "clear-node") {
         clearSelectedNode();
       }
@@ -1802,7 +1943,7 @@ function renderSelectionChips() {
   const visible = active.slice(0, visibleLimit);
   const extra = active.length - visible.length;
   const nextExtra = Math.min(SELECTION_CHIP_INCREMENT, extra);
-  const label = `Faculty in this view (${active.length})`;
+  const label = selectedAncestor ? "Faculty descendants" : `Faculty in this view (${active.length})`;
   els.selectionChips.hidden = false;
   els.selectionChips.innerHTML = `
     <span class="selection-chip-label">${escapeHtml(label)}</span>
@@ -1842,7 +1983,7 @@ function renderSelectionChips() {
 }
 
 function renderGraphSelectionCard(graphData) {
-  if (state.selectedNodeIndex === null) {
+  if (state.selectedNodeIndex === null || state.selectedNodeIndex === state.selectedAncestorIndex) {
     els.graphSelectionCard.hidden = true;
     els.graphSelectionCard.innerHTML = "";
     return;
@@ -1863,7 +2004,7 @@ function renderGraphSelectionCard(graphData) {
     </div>
     <div class="selection-card-meta">
       <a href="${escapeHtml(person.url)}" target="_blank" rel="noreferrer">Genealogy record</a>
-      <span>${escapeHtml(personMeta(person))}</span>
+      <span>${escapeHtml(personMeta(person, state.selectedNodeIndex))}</span>
       ${facultyRecord ? `<a href="${escapeHtml(facultyWebsiteUrl(facultyRecord))}" target="_blank" rel="noreferrer">${escapeHtml(facultyWebsiteLabel(facultyRecord))}</a>` : ""}
     </div>
     <div class="selection-card-stats">
@@ -1872,7 +2013,6 @@ function renderGraphSelectionCard(graphData) {
     </div>
     <div class="selection-card-actions">
       <button type="button" data-card-action="center">Center</button>
-      <button type="button" data-card-action="paths">Advisor Paths</button>
       <button type="button" data-card-action="descendants" ${descendantCount ? "" : "disabled"}>Show Descendants</button>
     </div>
   `;
@@ -1885,25 +2025,88 @@ function renderGraphSelectionCard(graphData) {
       } else if (action === "center") {
         state.pendingCenterNodeIndex = state.selectedNodeIndex;
         render();
-      } else if (action === "paths") {
-        showAdvisorPathsForNode(state.selectedNodeIndex);
       } else if (action === "descendants") {
         applyAncestorPerson(state.selectedNodeIndex);
-        setFocusMode("descendants", "width");
       }
     });
   });
 }
 
+function syncDetailPanelOrder() {
+  const panel = els.summaryPanel?.parentElement;
+  if (!panel) {
+    return;
+  }
+  const order = state.selectedAncestorIndex !== null || state.selectedNodeIndex !== null
+    ? [els.nodeDetail, els.chainPanel, els.summaryPanel, els.relationshipPanel]
+    : [els.summaryPanel, els.relationshipPanel, els.chainPanel, els.nodeDetail];
+  order.forEach((element) => {
+    if (element) {
+      panel.append(element);
+    }
+  });
+}
+
+function bindGraphPersonButtons(container) {
+  container.querySelectorAll("[data-graph-person-index]").forEach((button) => {
+    button.addEventListener("click", () => {
+      const personIndex = Number(button.dataset.graphPersonIndex);
+      if (Number.isInteger(personIndex)) {
+        state.activeView = "graph";
+        state.detailsOpen = false;
+        selectGraphNode(personIndex);
+      }
+    });
+  });
+}
+
+function renderGraphDensityNote(graphData) {
+  if (!els.graphDensityNote) {
+    return;
+  }
+  if (state.selectedAncestorIndex !== null) {
+    els.graphDensityNote.hidden = true;
+    els.graphDensityNote.textContent = "";
+    return;
+  }
+  const connectorCount = graphData.connectorNodeSet?.size || 0;
+  const hidden = graphData.hiddenByZoom || 0;
+  const parts = [];
+  if (graphData.fullLineage) {
+    parts.push("Full lineage graph");
+    parts.push(`${graphData.nodes.length.toLocaleString()} people in graph`);
+    if (graphData.common.length) {
+      const label = activeFacultyIndices().length === 1 ? "known ancestors" : "shared by all";
+      parts.push(`${graphData.common.length.toLocaleString()} ${label}`);
+    }
+  } else if (hidden) {
+    parts.push(`Showing ${graphData.visibleCommon.length.toLocaleString()} of ${graphData.desiredVisibleAncestorLimit.toLocaleString()} shared-by-all ancestors`);
+  } else if (graphData.visibleCommon.length === graphData.common.length) {
+    parts.push(`${graphData.visibleCommon.length.toLocaleString()} shared-by-all ancestors shown`);
+  } else {
+    parts.push(`${graphData.visibleCommon.length.toLocaleString()} shared-by-all ancestors shown`);
+  }
+  if (connectorCount) {
+    parts.push(`${connectorCount.toLocaleString()} connected lineage nodes`);
+  }
+  els.graphDensityNote.textContent = parts.join(" | ");
+  els.graphDensityNote.hidden = !graphData.nodes.length;
+}
+
 function renderSummaryPanel(graphData) {
   const active = activeFacultyIndices();
+  if (state.selectedNodeIndex !== null) {
+    els.summaryPanel.innerHTML = "";
+    return;
+  }
+  if (isDefaultTwoFacultyComparison(active)) {
+    els.summaryPanel.innerHTML = "";
+    return;
+  }
   if (active.length === 1 && state.selectedAncestorIndex === null) {
     const faculty = state.faculty[active[0]];
     const person = state.people[Number(faculty.person_index)];
     const advisors = advisorNamesForPerson(person);
-    const earliest = graphData.common
-      .filter((row) => yearNumber(row))
-      .sort((a, b) => yearNumber(a) - yearNumber(b))[0];
     const farthest = graphData.common
       .slice()
       .sort((a, b) => b.maxDistance - a.maxDistance || a.name.localeCompare(b.name))[0];
@@ -1930,12 +2133,12 @@ function renderSummaryPanel(graphData) {
       {
         label: "PhD",
         value: facultyDegreeSummary(faculty, person),
-        detail: facultyPhdSourceDetail(faculty),
+        detail: faculty.osu_phd_from_profile || "from genealogy record",
       },
       {
         label: advisors.length === 1 ? "Advisor" : "Advisors",
         value: advisors.length ? advisors.join("; ") : "Not listed",
-        detail: person ? [personMeta(person), `genealogy record ${person.id}`].filter(Boolean).join(" | ") : "Not in graph",
+        detail: person ? [personMeta(person, Number(faculty.person_index)), `genealogy record ${person.id}`].filter(Boolean).join(" | ") : "Not in graph",
       },
       {
         label: "Known Ancestry",
@@ -1944,12 +2147,15 @@ function renderSummaryPanel(graphData) {
       },
       {
         label: "Links",
-        valueHtml: linkParts.length ? linkParts.join(" ") : "None",
-        detail: earliest ? `Earliest shown: ${earliest.name}` : "No dated ancestor",
+        valueHtml: linkParts.length ? `<span class="summary-link-list">${linkParts.join("")}</span>` : "None",
       },
     ];
 
     els.summaryPanel.innerHTML = `
+      ${answerCalloutHtml(
+        `${faculty.osu_name} has ${graphData.common.length.toLocaleString()} known academic ancestors in this snapshot.`,
+        farthest ? `Longest shown advisor chain: ${farthest.maxDistance} links.` : "No ancestor chain is shown for this selection.",
+      )}
       <details class="detail-section summary-section" data-detail-section="summary"${detailSectionOpenAttr("summary", true)}>
         <summary>
           <span>
@@ -1969,105 +2175,7 @@ function renderSummaryPanel(graphData) {
 
   const selectedAncestor = state.selectedAncestorIndex === null ? null : state.people[state.selectedAncestorIndex];
   if (selectedAncestor) {
-    const ancestorMeta = personMeta(selectedAncestor);
-    const pathBundle = pathBundleForAncestor(
-      state.selectedAncestorIndex,
-      active,
-      active.length,
-    );
-    const cards = [
-      {
-        label: "Ancestor",
-        valueHtml: `<a href="${escapeHtml(selectedAncestor.url)}" target="_blank" rel="noreferrer">${escapeHtml(selectedAncestor.name)}</a>`,
-        detail: [`genealogy record ${selectedAncestor.id}`, ancestorMeta].filter(Boolean).join(" | "),
-      },
-      {
-        label: "Faculty Shown",
-        value: active.length.toLocaleString(),
-        detail: `${activeGroup()?.label || "current area"} descendants in this graph`,
-      },
-      {
-        label: "Advisor Paths",
-        value: pathBundle.totalRows ? `${pathBundle.totalRows} available` : "0 available",
-        detail: pathBundle.totalRows ? "The panel below starts with one path" : "No selected faculty descendants in this area",
-      },
-      {
-        label: "Current View",
-        value: focusModeLabel(),
-        detail: `descendants within ${activeGroup()?.label || "current area"}`,
-      },
-    ];
-
-    els.summaryPanel.innerHTML = `
-      <details class="detail-section summary-section" data-detail-section="summary"${detailSectionOpenAttr("summary", true)}>
-        <summary>
-          <span>
-            <strong>Ancestor View</strong>
-            <small>${escapeHtml(selectedAncestor.name)} descendants</small>
-          </span>
-          <span class="summary-toggle">Overview</span>
-        </summary>
-        <div class="summary-grid">
-          ${cards.map(summaryCardHtml).join("")}
-        </div>
-      </details>
-    `;
-    bindDetailSectionToggles(els.summaryPanel);
-    return;
-  }
-
-  const selectedNodePerson = state.selectedNodeIndex === null ? null : state.people[state.selectedNodeIndex];
-  const selectedNodeFaculty = state.selectedNodeIndex === null ? null : facultyByPersonIndex(state.selectedNodeIndex);
-  if (selectedNodePerson && !selectedNodeFaculty) {
-    const ancestorMeta = personMeta(selectedNodePerson);
-    const activeMask = maskForFaculty(active);
-    const matchedFaculty = active.filter(
-      (index) => (state.peopleMasks[state.selectedNodeIndex] & activeMask & (1n << BigInt(index))) !== 0n,
-    );
-    const pathBundle = pathBundleForAncestor(
-      state.selectedNodeIndex,
-      active,
-      active.length,
-    );
-    const allDescendants = descendantFacultyIndices(state.selectedNodeIndex).length;
-    const cards = [
-      {
-        label: "Ancestor",
-        valueHtml: `<a href="${escapeHtml(selectedNodePerson.url)}" target="_blank" rel="noreferrer">${escapeHtml(selectedNodePerson.name)}</a>`,
-        detail: [`genealogy record ${selectedNodePerson.id}`, ancestorMeta].filter(Boolean).join(" | "),
-      },
-      {
-        label: "Faculty Reached",
-        value: matchedFaculty.length.toLocaleString(),
-        detail: `${active.length.toLocaleString()} faculty currently shown`,
-      },
-      {
-        label: "Advisor Paths",
-        value: pathBundle.totalRows ? `${pathBundle.totalRows} available` : "0 available",
-        detail: pathBundle.totalRows ? "The panel below starts with one path" : "No shown faculty descendants",
-      },
-      {
-        label: "All Faculty Descendants",
-        value: allDescendants.toLocaleString(),
-        detail: "across the full OSU faculty graph",
-      },
-    ];
-
-    els.summaryPanel.innerHTML = `
-      <details class="detail-section summary-section" data-detail-section="summary"${detailSectionOpenAttr("summary", true)}>
-        <summary>
-          <span>
-            <strong>Selected Ancestor</strong>
-            <small>${escapeHtml(selectedNodePerson.name)}</small>
-          </span>
-          <span class="summary-toggle">Overview</span>
-        </summary>
-        <div class="summary-grid">
-          ${cards.map(summaryCardHtml).join("")}
-        </div>
-      </details>
-    `;
-    bindDetailSectionToggles(els.summaryPanel);
+    els.summaryPanel.innerHTML = "";
     return;
   }
 
@@ -2081,10 +2189,10 @@ function renderSummaryPanel(graphData) {
       {
         label: "Graph",
         value: "Empty",
-        detail: "choose an area or faculty to draw ancestry paths",
+        detail: "choose an area or faculty to draw ancestry",
       },
       {
-        label: "Shared Ancestors",
+        label: "Shared By All",
         value: "0",
         detail: "requires at least one selected faculty member",
       },
@@ -2096,6 +2204,7 @@ function renderSummaryPanel(graphData) {
     ];
 
     els.summaryPanel.innerHTML = `
+      ${answerCalloutHtml("No faculty are selected.", "Choose an area or faculty to draw an ancestry graph.")}
       <details class="detail-section summary-section" data-detail-section="summary"${detailSectionOpenAttr("summary", true)}>
         <summary>
           <span>
@@ -2119,54 +2228,66 @@ function renderSummaryPanel(graphData) {
     return;
   }
 
-  const topCommon = graphData.common[0];
-  const earliest = graphData.common
-    .filter((row) => yearNumber(row))
-    .sort((a, b) => yearNumber(a) - yearNumber(b))[0];
-  const farthest = graphData.common
-    .slice()
-    .sort((a, b) => b.maxDistance - a.maxDistance || b.matchedCount - a.matchedCount)[0];
-  const cards = [
-    {
-      label: "Selection",
-      value: active.length.toLocaleString(),
-      detail: active.length === 1 ? "faculty member" : "faculty members",
-    },
-    {
-      label: "Most Shared Ancestor",
-      value: topCommon ? topCommon.name : "None",
-      detail: topCommon ? `${topCommon.matchedCount} faculty reached` : "No shared ancestry",
-    },
-    {
-      label: "Earliest Common Ancestor",
-      value: earliest ? earliest.name : "None",
-      detail: earliest ? `${earliest.year || ""} ${formatCountryName(earliest.country)}`.trim() : "No dated ancestor",
-    },
-    {
-      label: selectedAncestor ? "Selected Ancestor Reach" : "Deepest Shared Link",
-      value: selectedAncestor ? selectedReach.toLocaleString() : farthest ? `${farthest.maxDistance} links` : "None",
-      detail: selectedAncestor ? selectedAncestor.name : farthest ? farthest.name : "No common link",
-    },
-  ];
-
-  els.summaryPanel.innerHTML = `
-    <details class="detail-section summary-section" data-detail-section="summary"${detailSectionOpenAttr("summary", true)}>
-      <summary>
-        <span>
-          <strong>Selection Overview</strong>
-          <small>${active.length.toLocaleString()} selected faculty</small>
-        </span>
-        <span class="summary-toggle">Overview</span>
-      </summary>
-      <div class="summary-grid">
-        ${cards.map(summaryCardHtml).join("")}
-      </div>
-    </details>
-  `;
-  bindDetailSectionToggles(els.summaryPanel);
+  const intentionalComparison = isIntentionalFacultyComparison(active);
+  const mrca = nearestCommonAncestor(active);
+  const sharedByMost = active.length > 1 && !graphData.common.length
+    ? recentSharedByMostAncestor(active)
+    : null;
+  const mrcaSummary = active.length > 1 && state.selectedAncestorIndex === null && mrca
+    ? answerCalloutActionHtml(
+      `The most recent common ancestor of these ${active.length.toLocaleString()} faculty is `,
+      mrca.person.name,
+      ".",
+      "This is the shared-by-all ancestor that minimizes the longest advisor distance across the selection.",
+      "show-mrca",
+    )
+    : "";
+  const comparisonSummary = intentionalComparison
+    ? mrca
+      ? answerCalloutActionHtml(
+        `The most recent common ancestor of these ${active.length.toLocaleString()} faculty is `,
+        mrca.person.name,
+        ".",
+        "This is the shared-by-all ancestor that minimizes the longest advisor distance.",
+        "show-mrca",
+      )
+      : sharedByMost
+        ? answerCalloutActionHtml(
+          "The recent shared-by-most ancestor is ",
+          sharedByMost.name,
+          ".",
+          `Advisor reaches ${sharedByMost.matchedCount.toLocaleString()} of ${active.length.toLocaleString()} selected faculty.`,
+          "show-shared-by-most",
+        )
+        : answerCalloutHtml(
+          "No common ancestor is shown for the selected faculty.",
+          "Try a smaller faculty subset or a different area.",
+        )
+    : "";
+  const selectionSummary = !intentionalComparison && sharedByMost
+    ? answerCalloutActionHtml(
+      "The recent shared-by-most ancestor is ",
+      sharedByMost.name,
+      ".",
+      `Advisor reaches ${sharedByMost.matchedCount.toLocaleString()} of ${active.length.toLocaleString()} selected faculty.`,
+      "show-shared-by-most",
+    )
+    : "";
+  els.summaryPanel.innerHTML = comparisonSummary || selectionSummary || mrcaSummary;
+  els.summaryPanel.querySelector("[data-summary-action='show-mrca']")?.addEventListener("click", () => {
+    showAdvisorPathsForNode(mrca.personIndex);
+  });
+  els.summaryPanel.querySelector("[data-summary-action='show-shared-by-most']")?.addEventListener("click", () => {
+    showAdvisorPathsForNode(sharedByMost.personIndex);
+  });
 }
 
 function renderChainPanel(graphData) {
+  if (isDefaultTwoFacultyComparison()) {
+    els.chainPanel.innerHTML = "";
+    return;
+  }
+
   const anchorIndex = graphData.chainAnchorIndex;
   const anchor = anchorIndex === null ? null : state.people[anchorIndex];
   const active = activeFacultyIndices();
@@ -2177,19 +2298,7 @@ function renderChainPanel(graphData) {
   const totalRows = allPathBundle.totalRows;
 
   if (!anchor || !rows.length) {
-    els.chainPanel.innerHTML = `
-      <details class="detail-section chain-section" data-detail-section="chains"${detailSectionOpenAttr("chains", false)}>
-        <summary>
-          <span>
-            <strong>Advisor Paths</strong>
-          <small>Choose an ancestor, graph node, or shared ancestor row</small>
-          </span>
-          <span class="summary-toggle">Paths</span>
-        </summary>
-        <p class="chain-empty">Choose an ancestor or a shared ancestor row to see representative advisor chains.</p>
-      </details>
-    `;
-    bindDetailSectionToggles(els.chainPanel);
+    els.chainPanel.innerHTML = "";
     return;
   }
 
@@ -2197,21 +2306,21 @@ function renderChainPanel(graphData) {
     <details class="detail-section chain-section" data-detail-section="chains"${detailSectionOpenAttr("chains", true)}>
       <summary>
         <span>
-          <strong>Advisor Paths</strong>
+          <strong>Lineage Chains</strong>
           <small>${totalRows.toLocaleString()} from ${escapeHtml(anchor.name)}</small>
         </span>
-        <span class="summary-toggle">Paths</span>
+        <span class="summary-toggle">Chains</span>
       </summary>
       <label class="chain-filter" for="chainPathSearch">
-        <span>Search advisor paths</span>
-        <input id="chainPathSearch" class="search-input" type="search" autocomplete="off" placeholder="Faculty or ancestor name" value="${escapeHtml(state.chainPathQuery)}">
+        <span>Search chains</span>
+        <input id="chainPathSearch" class="search-input" type="search" autocomplete="off" placeholder="Faculty name" value="${escapeHtml(state.chainPathQuery)}">
       </label>
-      <p class="chain-status" id="chainFilterCount">${totalRows.toLocaleString()} advisor paths.</p>
+      <p class="chain-status" id="chainFilterCount">${totalRows.toLocaleString()} lineage chains.</p>
       <div class="chain-list">
         ${rows.map((row) => `
           <article class="chain-card" data-chain-search="${escapeHtml(normalizeSearchText(`${row.faculty.osu_name} ${row.faculty.mgp_name || ""} ${row.path.map((personIndex) => state.people[personIndex]?.name || "").join(" ")}`))}">
             <div>
-              <strong>${facultyNameLink(row.faculty, "chain-faculty-link")}</strong>
+              <strong>${facultyGraphButton(row.faculty, "chain-faculty-link graph-person-button")}</strong>
               <span>${row.steps} advisor links</span>
             </div>
             <p class="chain-path">
@@ -2223,6 +2332,7 @@ function renderChainPanel(graphData) {
     </details>
   `;
   bindDetailSectionToggles(els.chainPanel);
+  bindGraphPersonButtons(els.chainPanel);
   applyChainPathFilter();
   els.chainPanel.querySelector("#chainPathSearch")?.addEventListener("input", (event) => {
     state.chainPathQuery = event.target.value;
@@ -2249,12 +2359,17 @@ function applyChainPathFilter() {
   els.chainPanel.querySelector(".chain-list")?.scrollTo({ top: 0 });
   status.textContent = query
     ? shown
-      ? `${shown.toLocaleString()} matching ${shown === 1 ? "path" : "paths"} of ${cards.length.toLocaleString()}`
-      : `No matching advisor paths among ${cards.length.toLocaleString()} paths.`
-    : `${cards.length.toLocaleString()} advisor paths.`;
+      ? `${shown.toLocaleString()} matching ${shown === 1 ? "chain" : "chains"} of ${cards.length.toLocaleString()}`
+      : `No matching lineage chains among ${cards.length.toLocaleString()} chains.`
+    : `${cards.length.toLocaleString()} lineage chains.`;
 }
 
 function renderRelationshipPanel() {
+  if (state.selectedNodeIndex !== null) {
+    els.relationshipPanel.innerHTML = "";
+    return;
+  }
+
   const relationship = twoFacultyRelationship();
   if (!relationship) {
     els.relationshipPanel.innerHTML = "";
@@ -2266,7 +2381,7 @@ function renderRelationshipPanel() {
       <section class="relationship-card relationship-card-primary">
         <div class="relationship-main">
           <span class="relationship-kicker">Two-faculty connection</span>
-          <strong>${facultyNameLink(relationship.leftFaculty, "chain-faculty-link")} and ${facultyNameLink(relationship.rightFaculty, "chain-faculty-link")}</strong>
+          <strong>${facultyGraphButton(relationship.leftFaculty, "chain-faculty-link graph-person-button")} and ${facultyGraphButton(relationship.rightFaculty, "chain-faculty-link graph-person-button")}</strong>
         </div>
       <p>No shared academic ancestor appears in this graph for this pair.</p>
     </section>
@@ -2281,25 +2396,22 @@ function renderRelationshipPanel() {
       <div class="relationship-main">
         <span class="relationship-kicker">Two-faculty connection</span>
         <strong>
-          ${facultyNameLink(relationship.leftFaculty, "chain-faculty-link")}
+          ${facultyGraphButton(relationship.leftFaculty, "chain-faculty-link graph-person-button")}
           and
-          ${facultyNameLink(relationship.rightFaculty, "chain-faculty-link")}
+          ${facultyGraphButton(relationship.rightFaculty, "chain-faculty-link graph-person-button")}
           are ${escapeHtml(relationship.relation)}
         </strong>
       </div>
-      <details class="relationship-more">
-        <summary>
+      <div class="relationship-more">
+        <div class="relationship-more-header">
           <span>
             <strong>Why?</strong>
-            <small>via ${escapeHtml(relationship.ancestor.name)}</small>
+            <small>
+              via
+              <button type="button" class="summary-link-button relationship-via-button" data-summary-action="show-relationship-ancestor">${escapeHtml(relationship.ancestor.name)}</button>
+            </small>
           </span>
-          <span class="summary-toggle">Details</span>
-        </summary>
-        <p>
-          Closest shared academic ancestor:
-          <a href="${escapeHtml(relationship.ancestor.url)}" target="_blank" rel="noreferrer">${escapeHtml(relationship.ancestor.name)}</a>.
-        </p>
-        <p>${escapeHtml(relationshipExplanation(relationship))}</p>
+        </div>
         <div class="relationship-stats">
           <span>${escapeHtml(relationship.leftFaculty.osu_name)}: ${escapeHtml(advisorStepLabel(relationship.leftDistance))}</span>
           <span>${escapeHtml(relationship.rightFaculty.osu_name)}: ${escapeHtml(advisorStepLabel(relationship.rightDistance))}</span>
@@ -2308,35 +2420,18 @@ function renderRelationshipPanel() {
           <span><strong>${escapeHtml(relationship.leftFaculty.osu_name)}</strong>${leftPath ? `: ${leftPath}` : ""}</span>
           <span><strong>${escapeHtml(relationship.rightFaculty.osu_name)}</strong>${rightPath ? `: ${rightPath}` : ""}</span>
         </div>
-        <div class="relationship-actions">
-          <button type="button" data-relationship-action="highlight">Highlight advisor paths</button>
-        </div>
-      </details>
+      </div>
     </section>
   `;
-  els.relationshipPanel.querySelector("[data-relationship-action='highlight']")?.addEventListener("click", () => {
-    showAdvisorPathsForNode(relationship.ancestorIndex);
-  });
   bindDetailSectionToggles(els.relationshipPanel);
-}
-
-function renderRange() {
-  const selectedCount = Math.max(1, activeFacultyIndices().length);
-  const maxShared = maxSharedWithAnyCommonAncestor();
-  els.minShared.max = String(maxShared);
-  els.minShared.title = `Highest available value for this selection: ${maxShared}`;
-  state.minShared = Math.max(1, Math.min(state.minShared, maxShared, selectedCount));
-  els.minShared.value = String(state.minShared);
-  els.minSharedLabel.textContent = String(state.minShared);
-
-  const visibleAncestorMax = Math.max(1, commonAncestors().length);
-  const visibleAncestorMin = Math.min(25, visibleAncestorMax);
-  els.visibleLimit.min = String(visibleAncestorMin);
-  els.visibleLimit.max = String(visibleAncestorMax);
-  els.visibleLimit.title = `Highest available value for this selection: ${visibleAncestorMax}`;
-  state.visibleAncestorLimit = clamp(state.visibleAncestorLimit, visibleAncestorMin, visibleAncestorMax);
-  els.visibleLimit.value = String(state.visibleAncestorLimit);
-  els.visibleLimitLabel.textContent = String(state.visibleAncestorLimit);
+  bindGraphPersonButtons(els.relationshipPanel);
+  els.relationshipPanel.querySelectorAll("[data-summary-action='show-relationship-ancestor']").forEach((button) => {
+    button.addEventListener("click", (event) => {
+      event.preventDefault();
+      event.stopPropagation();
+      showAdvisorPathsForNode(relationship.ancestorIndex);
+    });
+  });
 }
 
 function renderSharedAncestorPanel(rows) {
@@ -2351,58 +2446,37 @@ function renderSharedAncestorPanel(rows) {
   }
   els.sharedAncestorsPanel.open = Boolean(state.sharedAncestorsOpen);
   if (!top) {
-    els.sharedAncestorsSummary.textContent = "No shared ancestors shown for this selection";
+    els.sharedAncestorsSummary.textContent = "No shared-by-all ancestors shown for this selection";
   } else if (activeCount === 1) {
     const faculty = state.faculty[active[0]];
     els.sharedAncestorsSummary.textContent =
       `${rows.length.toLocaleString()} total ancestors | ${faculty?.osu_name || "selected faculty"}`;
   } else if (selectedAncestor && top.id === selectedAncestor.id) {
     els.sharedAncestorsSummary.textContent =
-      `${rows.length.toLocaleString()} shown | selected ancestor reaches ${top.matchedCount} faculty`;
+      `${rows.length.toLocaleString()} ancestors shared by these descendants`;
   } else {
     els.sharedAncestorsSummary.textContent =
-      `${rows.length.toLocaleString()} shown | top: ${top.name} reaches ${top.matchedCount} faculty`;
+      `${rows.length.toLocaleString()} shared-by-all ancestors in table | top: ${top.name} reaches ${top.matchedCount} faculty`;
   }
 }
 
 function renderAncestorTable(rows) {
   renderSharedAncestorPanel(rows);
-  if (els.ancestorTableSearch && els.ancestorTableSearch.value !== state.sharedAncestorQuery) {
-    els.ancestorTableSearch.value = state.sharedAncestorQuery;
-  }
-
-  const query = state.sharedAncestorQuery.trim();
-  const filteredRows = query
-      ? rows.filter((row) => textMatchesSearch(
-      `${row.name} ${row.degree_country || ""} ${formatCountryName(row.degree_country)} ${tableYearLabel(row)} ${row.matchedCount} ${row.maxDistance} ${row.totalDistance}`,
-      query,
-    ))
-    : rows;
-
-  if (els.ancestorTableStatus) {
-    els.ancestorTableStatus.textContent = query
-      ? `${filteredRows.length.toLocaleString()} matching ${filteredRows.length === 1 ? "ancestor" : "ancestors"} of ${rows.length.toLocaleString()}`
-      : `${rows.length.toLocaleString()} ${rows.length === 1 ? "ancestor" : "ancestors"} in table`;
-  }
-
-  if (!rows.length) {
+  const topRows = rows.slice(0, 40);
+  if (!topRows.length) {
     els.ancestorRows.innerHTML = `<tr><td colspan="6" class="empty">No selected faculty.</td></tr>`;
     return;
   }
-  if (!filteredRows.length) {
-    els.ancestorRows.innerHTML = `<tr><td colspan="6" class="empty">No matching ancestors.</td></tr>`;
-    return;
-  }
 
-  els.ancestorRows.innerHTML = filteredRows
+  els.ancestorRows.innerHTML = topRows
     .map((row) => `
       <tr data-person-index="${row.personIndex}">
         <td><a href="${row.url}" target="_blank" rel="noreferrer">${escapeHtml(row.name)}</a></td>
-        <td data-label="Year" title="${row.year_kind === "inferred" ? "Estimated graph placement year" : "Degree year from the genealogy record"}">${escapeHtml(tableYearLabel(row))}</td>
-        <td data-label="Country">${escapeHtml(formatCountryName(row.degree_country))}</td>
-        <td data-label="Faculty shown" class="numeric">${row.matchedCount}</td>
-        <td data-label="Longest path" class="numeric">${row.maxDistance}</td>
-        <td data-label="Total links" class="numeric">${row.totalDistance}</td>
+        <td title="${escapeHtml(tableYearTitle(row, row.personIndex))}">${escapeHtml(tableYearLabel(row, row.personIndex))}</td>
+        <td>${escapeHtml(countryLabel(row.degree_country))}</td>
+        <td class="numeric">${row.matchedCount}</td>
+        <td class="numeric">${row.maxDistance}</td>
+        <td class="numeric">${row.totalDistance}</td>
       </tr>
     `)
     .join("");
@@ -2414,44 +2488,10 @@ function renderAncestorTable(rows) {
   });
 }
 
-function selectedAreaSummary(indices) {
-  const counts = new Map();
-  indices.forEach((facultyIndex) => {
-    state.faculty[facultyIndex].groups.forEach((groupId) => {
-      counts.set(groupId, (counts.get(groupId) || 0) + 1);
-    });
-  });
-  return Array.from(counts.entries())
-    .sort((a, b) => b[1] - a[1] || state.groupLabels.get(a[0]).localeCompare(state.groupLabels.get(b[0])))
-    .slice(0, 8);
-}
-
 function renderDetail() {
   const selectedFaculty = activeFacultyIndices();
   if (state.selectedNodeIndex === null) {
-    const areaTags = selectedAreaSummary(selectedFaculty)
-      .map(([groupId, count]) => `<span class="tag">${escapeHtml(state.groupLabels.get(groupId))}: ${count}</span>`)
-      .join("");
-    els.nodeDetail.innerHTML = `
-      <details class="detail-section node-section" data-detail-section="selection"${detailSectionOpenAttr("selection", false)}>
-        <summary>
-          <span>
-            <strong>Selection Details</strong>
-          <small>${selectedFaculty.length.toLocaleString()} faculty and static data snapshot</small>
-          </span>
-          <span class="summary-toggle">Details</span>
-        </summary>
-        <div class="node-detail-body">
-          <div class="detail-name">${escapeHtml(selectionTitle())}</div>
-          <div>${selectedFaculty.length} selected faculty</div>
-          <div class="tag-row">
-            ${selectedFaculty.slice(0, 12).map((index) => facultyNameLink(state.faculty[index], "tag")).join("")}
-          </div>
-          <div class="tag-row">${areaTags}</div>
-        </div>
-      </details>
-    `;
-    bindDetailSectionToggles(els.nodeDetail);
+    els.nodeDetail.innerHTML = "";
     return;
   }
 
@@ -2465,9 +2505,10 @@ function renderDetail() {
   const professionalWebsite = facultyRecord?.professional_website_url || "";
   const advisorNames = advisorNamesForPerson(person).join("; ");
   const descendantCount = descendantFacultyIndices(state.selectedNodeIndex).length;
-  const selectedReachLabel = matchedFaculty.length === 1
-    ? "1 shown faculty member"
-    : `${matchedFaculty.length} shown faculty`;
+  const selectedAncestorNode = state.selectedNodeIndex === state.selectedAncestorIndex;
+  const selectedReachLabel = selectedFaculty.length
+    ? `${matchedFaculty.length.toLocaleString()} of ${selectedFaculty.length.toLocaleString()} selected faculty`
+    : "No selected faculty";
   syncDetailFacultyLimit(state.selectedNodeIndex, selectedFaculty);
   const detailFacultyLimit = Math.min(
     matchedFaculty.length,
@@ -2476,19 +2517,23 @@ function renderDetail() {
   const visibleMatchedFaculty = matchedFaculty.slice(0, detailFacultyLimit);
   const hiddenMatchedFaculty = matchedFaculty.length - visibleMatchedFaculty.length;
   const nextMatchedFaculty = Math.min(DETAIL_FACULTY_INCREMENT, hiddenMatchedFaculty);
-  const matchedFacultyTags = matchedFaculty.length
+  const matchedFacultyTags = matchedFaculty.length && !selectedAncestorNode
     ? `<div class="tag-row detail-faculty-list" aria-label="Shown faculty reached by this person">
-        ${visibleMatchedFaculty.map((index) => facultyNameLink(state.faculty[index], "tag")).join("")}
+        ${visibleMatchedFaculty.map((index) => facultyGraphButton(state.faculty[index], "tag graph-person-button")).join("")}
         ${hiddenMatchedFaculty > 0 ? `<button type="button" class="tag tag-action" data-detail-faculty-action="more">+${nextMatchedFaculty}</button>` : ""}
         ${visibleMatchedFaculty.length > DETAIL_FACULTY_INITIAL_COUNT ? `<button type="button" class="tag tag-action" data-detail-faculty-action="first">Show first ${DETAIL_FACULTY_INITIAL_COUNT}</button>` : ""}
       </div>`
     : "";
 
   const degreeLine = personDegreeLabel(person);
+  const graphPlacementLabel = graphYearLabel(person, state.selectedNodeIndex);
+  const showGraphPlacement = Boolean(
+    graphPlacementLabel && (isInferredYear(person) || estimatedYearForIndex(state.selectedNodeIndex)),
+  );
   const nodeSummaryTitle = facultyRecord ? "Selected Faculty" : "Selected Ancestor";
   const nodeSummaryDetail = facultyRecord
     ? facultyRecord.osu_name
-    : graphYearLabel(person) || `Genealogy record ${person.id}`;
+    : graphPlacementLabel || `Genealogy record ${person.id}`;
   const nodeBody = facultyRecord
     ? `
         <div class="detail-name">${escapeHtml(facultyRecord.osu_name)}</div>
@@ -2504,14 +2549,14 @@ function renderDetail() {
         <div class="detail-name">${escapeHtml(person.name)}</div>
         <div><strong>Genealogy ID:</strong> <a href="${person.url}" target="_blank" rel="noreferrer">${escapeHtml(person.id)}</a> <button type="button" class="copy-id-button" data-copy-id="${escapeHtml(person.id)}">Copy</button></div>
         ${degreeLine ? `<div><strong>Degree:</strong> ${escapeHtml(degreeLine)}</div>` : ""}
-        ${isInferredYear(person) ? `<div><strong>Graph placement:</strong> ${escapeHtml(graphYearLabel(person))}</div>` : ""}
+        ${showGraphPlacement ? `<div><strong>Graph placement:</strong> ${escapeHtml(graphPlacementLabel)}</div>` : ""}
         ${advisorNames ? `<div><strong>Advisor:</strong> ${escapeHtml(advisorNames)}</div>` : ""}
-        <div><strong>Shown faculty reached:</strong> ${escapeHtml(selectedReachLabel)}</div>
-        <div><strong>Faculty descendants shown:</strong> ${descendantCount.toLocaleString()}</div>
-        <div class="node-actions">
-          <button type="button" data-node-action="paths">Show advisor paths</button>
+        ${selectedAncestorNode ? "" : `
+          <div><strong>Selected faculty reached:</strong> ${escapeHtml(selectedReachLabel)}</div>
+        `}
+        ${selectedAncestorNode ? "" : `<div class="node-actions">
           <button type="button" data-node-action="descendants" ${descendantCount ? "" : "disabled"}>Show descendants</button>
-        </div>
+        </div>`}
       `;
 
   els.nodeDetail.innerHTML = `
@@ -2530,6 +2575,7 @@ function renderDetail() {
     </details>
   `;
   bindDetailSectionToggles(els.nodeDetail);
+  bindGraphPersonButtons(els.nodeDetail);
   els.nodeDetail.querySelector("[data-detail-faculty-action='more']")?.addEventListener("click", () => {
     state.detailFacultyLimit = Math.min(matchedFaculty.length, state.detailFacultyLimit + DETAIL_FACULTY_INCREMENT);
     renderDetail();
@@ -2538,12 +2584,8 @@ function renderDetail() {
     state.detailFacultyLimit = DETAIL_FACULTY_INITIAL_COUNT;
     renderDetail();
   });
-  els.nodeDetail.querySelector("[data-node-action='paths']")?.addEventListener("click", () => {
-    showAdvisorPathsForNode(state.selectedNodeIndex);
-  });
   els.nodeDetail.querySelector("[data-node-action='descendants']")?.addEventListener("click", () => {
-    applyAncestorPerson(state.selectedNodeIndex, false);
-    setFocusMode("descendants", "width");
+    applyAncestorPerson(state.selectedNodeIndex);
   });
   els.nodeDetail.querySelectorAll("[data-copy-id]").forEach((button) => {
     button.addEventListener("click", async () => {
@@ -2566,23 +2608,11 @@ function yearToY(year) {
 
 function computeNodePositions(graphData, displayWidth = 1200) {
   const positions = new Map();
-  const mobile = isMobileDetailsLayout();
   const facultySet = graphData.activeFacultyPersonIndices;
   const ancestorNodes = graphData.nodes.filter((index) => !facultySet.has(index));
-  const facultyNodes = Array.from(facultySet).sort((a, b) => state.people[a].name.localeCompare(state.people[b].name));
-  const facultyPersonSlot = new Map(facultyNodes.map((personIndex, slot) => [personIndex, slot]));
   const activeFaculty = activeFacultyIndices();
   const activeMask = maskForFaculty(activeFaculty);
-  const facultySlotByFacultyIndex = new Map();
-  activeFaculty.forEach((facultyIndex) => {
-    const personIndex = Number(state.faculty[facultyIndex]?.person_index);
-    const slot = facultyPersonSlot.get(personIndex);
-    if (Number.isInteger(slot)) {
-      facultySlotByFacultyIndex.set(facultyIndex, slot);
-    }
-  });
-  const centerCache = new Map();
-  const years = graphData.nodes.map((index) => yearNumber(state.people[index])).filter(Number.isFinite);
+  const years = graphData.nodes.map((index) => placementYearForIndex(index)).filter(Number.isFinite);
   const minYear = Math.min(...years, 1100);
   const maxYear = Math.max(...years, 2026);
   const bandCount = Math.max(8, Math.min(20, Math.ceil((maxYear - minYear) / 55)));
@@ -2590,39 +2620,15 @@ function computeNodePositions(graphData, displayWidth = 1200) {
   const unknown = [];
   const commonRank = new Map(graphData.common.map((row, rank) => [row.personIndex, rank]));
 
-  function descendantCenterRatio(personIndex) {
-    if (centerCache.has(personIndex)) {
-      return centerCache.get(personIndex);
-    }
-    const mask = state.peopleMasks[personIndex] & activeMask;
-    let total = 0;
-    let count = 0;
-    activeFaculty.forEach((facultyIndex) => {
-      if ((mask & (1n << BigInt(facultyIndex))) === 0n) {
-        return;
-      }
-      const slot = facultySlotByFacultyIndex.get(facultyIndex);
-      if (Number.isInteger(slot)) {
-        total += slot;
-        count += 1;
-      }
-    });
-    const ratio = count ? total / count / Math.max(1, facultyNodes.length - 1) : 0.5;
-    centerCache.set(personIndex, ratio);
-    return ratio;
-  }
-
   ancestorNodes
     .slice()
     .sort((a, b) => {
-      const yearA = yearNumber(state.people[a]) || 9999;
-      const yearB = yearNumber(state.people[b]) || 9999;
-      return yearA - yearB ||
-        descendantCenterRatio(a) - descendantCenterRatio(b) ||
-        (commonRank.get(a) ?? 9999) - (commonRank.get(b) ?? 9999);
+      const yearA = placementYearForIndex(a) || 9999;
+      const yearB = placementYearForIndex(b) || 9999;
+      return yearA - yearB || (commonRank.get(a) || 0) - (commonRank.get(b) || 0);
     })
     .forEach((personIndex) => {
-      const year = yearNumber(state.people[personIndex]);
+      const year = placementYearForIndex(personIndex);
       if (!year) {
         unknown.push(personIndex);
         return;
@@ -2632,32 +2638,23 @@ function computeNodePositions(graphData, displayWidth = 1200) {
         0,
         bandCount - 1,
       );
-      buckets[band].push(personIndex);
+      buckets[band].push({ personIndex, baseX: 0 });
     });
 
   if (unknown.length) {
-    buckets[bandCount - 1].push(...unknown);
+    const middleBand = Math.floor(bandCount / 2);
+    buckets[middleBand].push(...unknown.map((personIndex) => ({ personIndex, baseX: 0 })));
   }
 
-  buckets.forEach((bucket) => {
-    bucket.sort((a, b) =>
-      descendantCenterRatio(a) - descendantCenterRatio(b) ||
-      (commonRank.get(a) ?? 9999) - (commonRank.get(b) ?? 9999) ||
-      state.people[a].name.localeCompare(state.people[b].name),
-    );
-  });
-
   const maxBucketSize = Math.max(1, ...buckets.map((bucket) => bucket.length));
-  const facultyRowTarget = mobile
-    ? clamp(Math.floor((displayWidth || 393) / 58), 5, 8)
-    : clamp(Math.floor((displayWidth || 1200) / 58), 18, 36);
+  const facultyRowTarget = clamp(Math.floor((displayWidth || 1200) / 58), 18, 36);
   const facultyRows = Math.max(1, Math.ceil(facultySet.size / facultyRowTarget));
   const facultyColumns = Math.max(1, Math.ceil(facultySet.size / facultyRows));
   const facultyBandHeight = 116 + (facultyRows - 1) * 120;
-  const countBasedWidth = Math.max(360 + facultyColumns * (mobile ? 142 : 158), 320 + maxBucketSize * (mobile ? 54 : 74));
-  const viewportBasedWidth = Math.round((displayWidth || 1200) * (mobile ? 1.82 : 2.15));
+  const countBasedWidth = Math.max(360 + facultyColumns * 158, 320 + maxBucketSize * 74);
+  const viewportBasedWidth = Math.round((displayWidth || 1200) * 2.15);
   const worldWidth = Math.max(
-    mobile ? 1060 : 1550,
+    1550,
     Math.min(9000, Math.max(countBasedWidth, viewportBasedWidth)),
   );
   const worldHeight = Math.max(
@@ -2679,35 +2676,62 @@ function computeNodePositions(graphData, displayWidth = 1200) {
     bottom: Math.max(260, facultyBandTop - 150),
   };
 
-  const left = mobile ? 76 : 120;
-  const right = worldWidth - (mobile ? 92 : 160);
+  const left = 120;
+  const right = worldWidth - 160;
   const usableWidth = Math.max(1, right - left);
-  buckets.forEach((bucket, band) => {
-    const spread = bucket.length <= 1 ? 0 : usableWidth / (bucket.length - 1);
-    bucket.forEach((personIndex, slot) => {
-      const person = state.people[personIndex];
-      const year = yearNumber(person);
-      const slotX = bucket.length <= 1
-        ? left + descendantCenterRatio(personIndex) * usableWidth
-        : left + slot * spread;
-      const descendantX = left + descendantCenterRatio(personIndex) * usableWidth;
-      const descendantWeight = mobile ? 0.68 : 0.58;
-      const jitter = ((band % 3) - 1) * (mobile ? 8 : 12);
-      const x = clamp(descendantX * descendantWeight + slotX * (1 - descendantWeight) + jitter, left, right);
-      const y = year ? yearToY(year) : worldHeight - 280;
-      positions.set(personIndex, { x, y });
-    });
-  });
-
+  const facultyNodes = Array.from(facultySet).sort((a, b) => state.people[a].name.localeCompare(state.people[b].name));
+  const facultyXByFacultyIndex = new Map();
   facultyNodes.forEach((personIndex, slot) => {
     const row = Math.floor(slot / facultyColumns);
     const column = slot % facultyColumns;
     const rowStart = row * facultyColumns;
     const columnsInRow = Math.max(1, Math.min(facultyColumns, facultyNodes.length - rowStart));
     const x = columnsInRow <= 1 ? worldWidth / 2 : left + (column / (columnsInRow - 1)) * usableWidth;
+    const faculty = facultyByPersonIndex(personIndex);
+    if (faculty) {
+      facultyXByFacultyIndex.set(Number(faculty.faculty_index), x);
+    }
     positions.set(personIndex, {
       x,
       y: facultyBandTop + row * 120,
+    });
+  });
+
+  buckets.forEach((bucket, band) => {
+    bucket.forEach((entry, slot) => {
+      const matchedFaculty = activeFaculty
+        .filter((facultyIndex) => state.peopleMasks[entry.personIndex] & activeMask & (1n << BigInt(facultyIndex)))
+        .map((facultyIndex) => facultyXByFacultyIndex.get(facultyIndex))
+        .filter(Number.isFinite)
+        .sort((a, b) => a - b);
+      const middle = Math.floor(matchedFaculty.length / 2);
+      const medianX = matchedFaculty.length
+        ? matchedFaculty.length % 2
+          ? matchedFaculty[middle]
+          : (matchedFaculty[middle - 1] + matchedFaculty[middle]) / 2
+        : left + (((slot + 1) / (bucket.length + 1)) * usableWidth);
+      entry.baseX = clamp(medianX + ((band % 3) - 1) * 14, left, right);
+    });
+
+    bucket.sort((a, b) => a.baseX - b.baseX || state.people[a.personIndex].name.localeCompare(state.people[b.personIndex].name));
+    const minGap = bucket.length <= 1 ? 0 : Math.min(62, Math.max(18, usableWidth / Math.max(1, bucket.length - 1)));
+    let previousX = left - minGap;
+    bucket.forEach((entry) => {
+      entry.x = Math.max(entry.baseX, previousX + minGap);
+      previousX = entry.x;
+    });
+    const overflow = bucket.length ? Math.max(0, bucket[bucket.length - 1].x - right) : 0;
+    if (overflow) {
+      bucket.forEach((entry) => {
+        entry.x -= overflow;
+      });
+    }
+    bucket.forEach((entry) => {
+      const year = placementYearForIndex(entry.personIndex);
+      positions.set(entry.personIndex, {
+        x: clamp(entry.x, left, right),
+        y: year ? yearToY(year) : yearToY(Math.round((minYear + maxYear) / 2)),
+      });
     });
   });
 
@@ -2738,7 +2762,6 @@ function fitGraphView(mode = "width") {
   const width = els.canvas.clientWidth || 1200;
   const height = els.canvas.clientHeight || 620;
   const bounds = state.graphBounds;
-  const mobile = isMobileDetailsLayout();
   if (mode === "faculty") {
     const graphData = state.currentGraphData;
     const facultyPoints = graphData
@@ -2750,22 +2773,21 @@ function fitGraphView(mode = "width") {
       const left = Math.min(...facultyPoints.map((point) => point.x));
       const right = Math.max(...facultyPoints.map((point) => point.x));
       const bottom = Math.max(...facultyPoints.map((point) => point.y));
-      const scale = clamp((width - (mobile ? 36 : 96)) / Math.max(mobile ? 520 : 900, right - left + (mobile ? 120 : 280)), MIN_SCALE, Math.min(MAX_SCALE, mobile ? 1.55 : 1.2));
+      const scale = clamp((width - 96) / Math.max(900, right - left + 280), MIN_SCALE, Math.min(MAX_SCALE, 1.2));
       state.view.scale = scale;
       state.view.x = width / 2 - ((left + right) / 2) * scale;
-      state.view.y = height - (mobile ? 86 : 150) - bottom * scale;
+      state.view.y = height - 150 - bottom * scale;
       return;
     }
   }
   const scaleX = (width - 72) / Math.max(1, bounds.width);
   const scaleY = (height - 72) / Math.max(1, bounds.height);
-  const mobileScaleBoost = mobile && mode !== "all" ? 1.42 : 1;
-  const scale = clamp(mode === "all" ? Math.min(scaleX, scaleY, 1) : Math.min(scaleX * mobileScaleBoost, mobile ? 1.15 : 0.9), MIN_SCALE, MAX_SCALE);
+  const scale = clamp(mode === "all" ? Math.min(scaleX, scaleY, 1) : Math.min(scaleX, 0.9), MIN_SCALE, MAX_SCALE);
   state.view.scale = scale;
   state.view.x = width / 2 - (bounds.left + bounds.width / 2) * scale;
   state.view.y = mode === "all"
     ? height / 2 - (bounds.top + bounds.height / 2) * scale
-    : (mobile ? 26 : 42) - bounds.top * scale;
+    : 42 - bounds.top * scale;
 }
 
 function centerOnNode(personIndex) {
@@ -2792,40 +2814,6 @@ function screenToWorld(point) {
     x: (point.x - state.view.x) / state.view.scale,
     y: (point.y - state.view.y) / state.view.scale,
   };
-}
-
-function currentWorldViewport(displayWidth, displayHeight, padding = EDGE_VIEWPORT_PADDING) {
-  const topLeft = screenToWorld({ x: -padding, y: -padding });
-  const bottomRight = screenToWorld({ x: displayWidth + padding, y: displayHeight + padding });
-  return {
-    left: Math.min(topLeft.x, bottomRight.x),
-    right: Math.max(topLeft.x, bottomRight.x),
-    top: Math.min(topLeft.y, bottomRight.y),
-    bottom: Math.max(topLeft.y, bottomRight.y),
-  };
-}
-
-function segmentMightTouchViewport(start, end, rect) {
-  const left = Math.min(start.x, end.x);
-  const right = Math.max(start.x, end.x);
-  const top = Math.min(start.y, end.y);
-  const bottom = Math.max(start.y, end.y);
-  return right >= rect.left && left <= rect.right && bottom >= rect.top && top <= rect.bottom;
-}
-
-function isImportantEdge(advisorIndex, studentIndex, graphData, commonRank) {
-  if (graphData.pathEdgeSet?.has(edgeKey(advisorIndex, studentIndex))) {
-    return true;
-  }
-  if (state.selectedNodeIndex === advisorIndex || state.selectedNodeIndex === studentIndex) {
-    return true;
-  }
-  if (graphData.activeFacultyPersonIndices.has(studentIndex) || graphData.activeFacultyPersonIndices.has(advisorIndex)) {
-    return true;
-  }
-  const advisorRank = commonRank.get(advisorIndex);
-  const studentRank = commonRank.get(studentIndex);
-  return (advisorRank !== undefined && advisorRank < 18) || (studentRank !== undefined && studentRank < 18);
 }
 
 function drawYearAxis() {
@@ -2905,25 +2893,6 @@ function drawOverview(graphData, displayWidth, displayHeight) {
     };
   }
 
-  const highlightedEdges = graphData.edges.filter(([advisorIndex, studentIndex]) =>
-    graphData.pathEdgeSet?.has(edgeKey(advisorIndex, studentIndex)),
-  );
-  highlightedEdges.forEach(([advisorIndex, studentIndex]) => {
-    const advisor = state.nodePositions.get(advisorIndex);
-    const student = state.nodePositions.get(studentIndex);
-    if (!advisor || !student) {
-      return;
-    }
-    const a = overviewPoint(advisor);
-    const s = overviewPoint(student);
-    overviewCtx.lineWidth = 1.25;
-    overviewCtx.strokeStyle = "rgba(186, 12, 47, 0.42)";
-    overviewCtx.beginPath();
-    overviewCtx.moveTo(a.x, a.y);
-    overviewCtx.lineTo(s.x, s.y);
-    overviewCtx.stroke();
-  });
-
   const activeMask = maskForFaculty(activeFacultyIndices());
   const commonRank = new Map(graphData.common.map((row, rank) => [row.personIndex, rank]));
   graphData.nodes.forEach((personIndex) => {
@@ -2935,16 +2904,16 @@ function drawOverview(graphData, displayWidth, displayHeight) {
     const matchedCount = bitCount(state.peopleMasks[personIndex] & activeMask);
     const isFaculty = graphData.activeFacultyPersonIndices.has(personIndex);
     const rank = commonRank.get(personIndex);
-    if (!isFaculty && (rank === undefined || rank >= 35) && !graphData.pathNodeSet?.has(personIndex)) {
+    if (!graphData.fullLineage && !isFaculty && (rank === undefined || rank >= 35)) {
       return;
     }
-    const radius = isFaculty ? 1.8 : graphData.pathNodeSet?.has(personIndex) ? 2.1 : Math.max(1.1, Math.min(2, 1 + matchedCount / 34));
+    const radius = isFaculty ? 1.8 : Math.max(1.1, Math.min(2, 1 + matchedCount / 34));
     overviewCtx.beginPath();
     overviewCtx.arc(overview.x, overview.y, radius, 0, Math.PI * 2);
     overviewCtx.fillStyle = isFaculty
       ? OSU_COLORS.scarlet
-      : rank !== undefined && rank < 20
-        ? OSU_COLORS.grayDark40
+      : rank !== undefined
+        ? rank < 20 ? OSU_COLORS.sharedDark : OSU_COLORS.shared
         : OSU_COLORS.grayDark20;
     overviewCtx.fill();
   });
@@ -2970,8 +2939,7 @@ function drawOverview(graphData, displayWidth, displayHeight) {
   overviewCtx.strokeRect(0.5, 0.5, overviewWidth - 1, overviewHeight - 1);
 }
 
-function rectIsOpen(rects, left, top, width, height) {
-  const gap = 7;
+function rectIsOpen(rects, left, top, width, height, gap = 7) {
   const right = left + width;
   const bottom = top + height;
   return rects.every((rect) =>
@@ -2986,11 +2954,49 @@ function drawGraphLabels(graphData, displayWidth, displayHeight) {
   const visibleNodes = new Set(graphData.nodes);
   const labels = new Map();
   const activeCount = activeFacultyIndices().length;
+  const labelZoom = clamp((state.view.scale - 0.38) / 1.15, 0, 1);
+  const closeLabelZoom = clamp((state.view.scale - 0.62) / 1.05, 0, 1);
+  const detailLabelZoom = clamp((state.view.scale - 0.82) / 0.95, 0, 1);
+  const activeMask = maskForFaculty(activeFacultyIndices());
+  const commonRank = new Map(graphData.common.map((row, rank) => [row.personIndex, rank]));
+  const viewportPadding = 120 + detailLabelZoom * 180;
   const quietDefault =
     activeCount > 24 &&
     state.focusMode === "common" &&
     state.selectedAncestorIndex === null &&
     state.selectedNodeIndex === null;
+
+  function screenAnchorForIndex(personIndex) {
+    const point = state.nodePositions.get(personIndex);
+    return point ? worldToScreen(point) : null;
+  }
+
+  function centerDistanceForIndex(personIndex) {
+    const anchor = screenAnchorForIndex(personIndex);
+    if (!anchor) {
+      return Number.POSITIVE_INFINITY;
+    }
+    return Math.hypot(
+      (anchor.x - displayWidth / 2) / Math.max(1, displayWidth),
+      (anchor.y - displayHeight / 2) / Math.max(1, displayHeight),
+    );
+  }
+
+  function isNearViewport(personIndex, padding = viewportPadding) {
+    const anchor = screenAnchorForIndex(personIndex);
+    return Boolean(
+      anchor &&
+      anchor.x >= -padding &&
+      anchor.x <= displayWidth + padding &&
+      anchor.y >= -padding &&
+      anchor.y <= displayHeight + padding,
+    );
+  }
+
+  function compareByViewportThenName(a, b) {
+    const distance = centerDistanceForIndex(a) - centerDistanceForIndex(b);
+    return distance || state.people[a].name.localeCompare(state.people[b].name);
+  }
 
   function addLabel(personIndex, kind, priority) {
     if (!visibleNodes.has(personIndex)) {
@@ -3005,7 +3011,7 @@ function drawGraphLabels(graphData, displayWidth, displayHeight) {
       return;
     }
     const anchor = worldToScreen(point);
-    if (anchor.x < -180 || anchor.x > displayWidth + 180 || anchor.y < -120 || anchor.y > displayHeight + 120) {
+    if (anchor.x < -viewportPadding || anchor.x > displayWidth + viewportPadding || anchor.y < -viewportPadding || anchor.y > displayHeight + viewportPadding) {
       return;
     }
     const isFaculty = graphData.activeFacultyPersonIndices.has(personIndex);
@@ -3022,33 +3028,85 @@ function drawGraphLabels(graphData, displayWidth, displayHeight) {
   }
 
   const facultyLabelLimit = quietDefault
-    ? 0
+    ? Math.round(labelZoom * Math.min(12, activeCount))
     : state.focusMode === "faculty"
-      ? 42
-      : state.focusMode === "path"
-        ? 16
-        : activeCount <= 12
-          ? activeCount
-          : 8;
+      ? Math.round(42 + labelZoom * 20 + detailLabelZoom * 32)
+      : activeCount <= 12
+        ? activeCount
+        : Math.round(8 + labelZoom * Math.min(28, Math.max(0, activeCount - 8)) + detailLabelZoom * 24);
   Array.from(graphData.activeFacultyPersonIndices)
-    .sort((a, b) => state.people[a].name.localeCompare(state.people[b].name))
+    .sort(detailLabelZoom > 0.15 ? compareByViewportThenName : (a, b) => state.people[a].name.localeCompare(state.people[b].name))
     .slice(0, facultyLabelLimit)
     .forEach((personIndex) => addLabel(personIndex, "faculty", 55));
 
-  const ancestorLabelLimit = quietDefault ? 2 : state.focusMode === "path" ? 3 : 4;
-  graphData.common.slice(0, ancestorLabelLimit).forEach((row, rank) => {
+  const ancestorLabelLimit = quietDefault
+    ? Math.round(2 + labelZoom * 18)
+    : Math.round(4 + labelZoom * 22 + detailLabelZoom * 28);
+  graphData.visibleCommon.slice(0, ancestorLabelLimit).forEach((row, rank) => {
     if (!graphData.activeFacultyPersonIndices.has(row.personIndex)) {
       addLabel(row.personIndex, "ancestor", 68 - rank);
     }
   });
 
-  graphData.pathNodeSet?.forEach((personIndex) => {
-    addLabel(personIndex, graphData.activeFacultyPersonIndices.has(personIndex) ? "faculty" : "path", 76);
-  });
+  const visibleCommonSet = new Set(graphData.visibleCommon.map((row) => row.personIndex));
+  if (detailLabelZoom > 0) {
+    graphData.visibleCommon
+      .filter((row) =>
+        !labels.has(row.personIndex) &&
+        !graphData.activeFacultyPersonIndices.has(row.personIndex) &&
+        isNearViewport(row.personIndex))
+      .sort((a, b) =>
+        compareByViewportThenName(a.personIndex, b.personIndex) ||
+        (commonRank.get(a.personIndex) || 0) - (commonRank.get(b.personIndex) || 0))
+      .slice(0, Math.round(detailLabelZoom * 48))
+      .forEach((row, index) => addLabel(row.personIndex, "ancestor", 46 - index / 100));
+  }
 
-  graphData.chainRows.forEach((row) => {
-    addLabel(Number(row.faculty.person_index), "faculty", 82);
-  });
+  const connectorLabelLimit = Math.round(closeLabelZoom * (quietDefault ? 18 : 36) + detailLabelZoom * 44);
+  const connectorLabelSource = graphData.fullLineage
+    ? Array.from(graphData.lineageLabelNodeSet || [])
+    : Array.from(graphData.connectorNodeSet || []);
+  connectorLabelSource
+    .filter((personIndex) =>
+      visibleNodes.has(personIndex) &&
+      !graphData.activeFacultyPersonIndices.has(personIndex) &&
+      !visibleCommonSet.has(personIndex))
+    .sort((a, b) => {
+      const yearA = placementYearForIndex(a) || 0;
+      const yearB = placementYearForIndex(b) || 0;
+      return yearB - yearA || state.people[a].name.localeCompare(state.people[b].name);
+    })
+    .slice(0, connectorLabelLimit)
+    .forEach((personIndex, index) => addLabel(personIndex, "path", 50 - index / 100));
+
+  if (detailLabelZoom > 0) {
+    graphData.nodes
+      .filter((personIndex) =>
+        !labels.has(personIndex) &&
+        !graphData.activeFacultyPersonIndices.has(personIndex) &&
+        !visibleCommonSet.has(personIndex) &&
+        isNearViewport(personIndex, 80 + detailLabelZoom * 140))
+      .sort((a, b) => {
+        const matchedA = bitCount(state.peopleMasks[a] & activeMask);
+        const matchedB = bitCount(state.peopleMasks[b] & activeMask);
+        const rankA = commonRank.has(a) ? Math.max(0, 120 - commonRank.get(a)) : 0;
+        const rankB = commonRank.has(b) ? Math.max(0, 120 - commonRank.get(b)) : 0;
+        const scoreA = matchedA * 18 + rankA - centerDistanceForIndex(a) * 24;
+        const scoreB = matchedB * 18 + rankB - centerDistanceForIndex(b) * 24;
+        return scoreB - scoreA || state.people[a].name.localeCompare(state.people[b].name);
+      })
+      .slice(0, Math.round(detailLabelZoom * 72))
+      .forEach((personIndex, index) => addLabel(personIndex, "path", 34 - index / 100));
+  }
+
+  if (activeCount <= 2) {
+    GRAPH_ANCESTOR_PRESETS.forEach((preset) => {
+      const personIndex = personIndexByMgpId(preset.pid);
+      if (personIndex !== null && visibleNodes.has(personIndex)) {
+        addLabel(personIndex, "ancestor", 84);
+      }
+    });
+  }
 
   if (graphData.chainAnchorIndex !== null) {
     addLabel(graphData.chainAnchorIndex, "path", 92);
@@ -3066,22 +3124,24 @@ function drawGraphLabels(graphData, displayWidth, displayHeight) {
 
   const placedRects = [];
   const placements = [];
-  const maxRows = 14;
+  const maxRows = Math.round(14 + labelZoom * 18 + detailLabelZoom * 18);
+  const collisionGap = Math.max(2, 7 - detailLabelZoom * 4);
 
   orderedLabels.forEach((label) => {
     const below = label.anchor.y < displayHeight - (label.kind === "faculty" ? 135 : 92);
-    const rowStride = Math.max(42, label.measured.height + 8);
+    const rowStride = Math.max(32, label.measured.height + 8 - detailLabelZoom * 4);
+    const anchorGap = Math.max(8, 13 - detailLabelZoom * 4);
     let placed = null;
 
     for (let row = 0; row < maxRows; row += 1) {
       const top = below
-        ? label.anchor.y + 13 + row * rowStride
-        : label.anchor.y - 13 - label.measured.height - row * rowStride;
+        ? label.anchor.y + anchorGap + row * rowStride
+        : label.anchor.y - anchorGap - label.measured.height - row * rowStride;
       if (top > displayHeight + 8 || top + label.measured.height < -8) {
         continue;
       }
       const left = clamp(label.anchor.x - label.measured.width / 2, 6, Math.max(6, displayWidth - label.measured.width - 6));
-      if (rectIsOpen(placedRects, left, top, label.measured.width, label.measured.height)) {
+      if (rectIsOpen(placedRects, left, top, label.measured.width, label.measured.height, collisionGap)) {
         placedRects.push({
           left,
           top,
@@ -3114,13 +3174,22 @@ function drawGraphLabels(graphData, displayWidth, displayHeight) {
     const selected = state.selectedNodeIndex === label.personIndex;
     const hovered = state.hoveredNodeIndex === label.personIndex;
     const faculty = label.kind === "faculty";
+    const sharedAncestor = label.kind === "ancestor";
     const path = label.kind === "path";
     const emphasized = selected || hovered;
     drawScreenLabelBox(label.lines, label.left, label.top, label.measured, {
-      color: emphasized ? OSU_COLORS.scarletDark40 : faculty ? OSU_COLORS.scarletDark60 : OSU_COLORS.grayDark80,
+      color: emphasized
+        ? OSU_COLORS.scarletDark40
+        : faculty
+          ? OSU_COLORS.scarletDark60
+          : sharedAncestor
+            ? OSU_COLORS.sharedDark
+            : OSU_COLORS.grayDark80,
       border: emphasized
         ? "rgba(186, 12, 47, 0.72)"
-        : path
+        : sharedAncestor
+          ? "rgba(0, 112, 122, 0.45)"
+          : path
           ? "rgba(100, 106, 110, 0.5)"
           : faculty
             ? "rgba(186, 12, 47, 0.45)"
@@ -3156,38 +3225,24 @@ function drawGraph(graphData = visibleGraph()) {
   ctx.scale(state.view.scale, state.view.scale);
   drawYearAxis();
 
-  const activeMask = maskForFaculty(activeFacultyIndices());
-  const commonRank = new Map(graphData.common.map((row, rank) => [row.personIndex, rank]));
   ctx.lineWidth = 1 / state.view.scale;
-  const viewport = currentWorldViewport(displayWidth, displayHeight);
-  const lowZoom = state.view.scale < 0.42;
-  const denseGraph = graphData.edges.length > 320;
   graphData.edges.forEach(([advisorIndex, studentIndex]) => {
     const advisor = state.nodePositions.get(advisorIndex);
     const student = state.nodePositions.get(studentIndex);
     if (!advisor || !student) {
       return;
     }
-    const highlighted = graphData.pathEdgeSet?.has(edgeKey(advisorIndex, studentIndex));
-    const important = isImportantEdge(advisorIndex, studentIndex, graphData, commonRank);
-    if (!highlighted && !important && !segmentMightTouchViewport(advisor, student, viewport)) {
-      return;
-    }
-    if (!highlighted && !important && lowZoom && denseGraph) {
-      return;
-    }
-    ctx.lineWidth = (highlighted ? 2.05 : important ? 1.15 : 0.8) / state.view.scale;
-    ctx.strokeStyle = highlighted
-      ? "rgba(186, 12, 47, 0.5)"
-      : important
-        ? "rgba(100, 106, 110, 0.24)"
-        : "rgba(100, 106, 110, 0.13)";
+    ctx.lineWidth = 1 / state.view.scale;
+    ctx.strokeStyle = "rgba(100, 106, 110, 0.18)";
     ctx.beginPath();
     ctx.moveTo(advisor.x, advisor.y);
-    ctx.lineTo(student.x, student.y);
+    const midY = (advisor.y + student.y) / 2;
+    ctx.bezierCurveTo(advisor.x, midY, student.x, midY, student.x, student.y);
     ctx.stroke();
   });
 
+  const activeMask = maskForFaculty(activeFacultyIndices());
+  const commonRank = new Map(graphData.common.map((row, rank) => [row.personIndex, rank]));
   graphData.nodes.forEach((personIndex) => {
     const point = state.nodePositions.get(personIndex);
     if (!point) {
@@ -3195,11 +3250,10 @@ function drawGraph(graphData = visibleGraph()) {
     }
     const matchedCount = bitCount(state.peopleMasks[personIndex] & activeMask);
     const isFaculty = graphData.activeFacultyPersonIndices.has(personIndex);
-    const onPath = graphData.pathNodeSet?.has(personIndex);
     const rank = commonRank.get(personIndex);
     const selected = state.selectedNodeIndex === personIndex;
     const hovered = state.hoveredNodeIndex === personIndex;
-    const radius = (selected || hovered ? 8 : onPath ? 6.5 : isFaculty ? 6 : Math.max(3.5, Math.min(7, 2.5 + matchedCount / 10))) / state.view.scale;
+    const radius = (selected || hovered ? 8 : isFaculty ? 6 : Math.max(3.5, Math.min(7, 2.5 + matchedCount / 10))) / state.view.scale;
 
     if (selected || hovered) {
       ctx.beginPath();
@@ -3226,10 +3280,8 @@ function drawGraph(graphData = visibleGraph()) {
         ? OSU_COLORS.scarletDark60
         : isFaculty
           ? OSU_COLORS.scarlet
-          : onPath
-            ? OSU_COLORS.scarletDark40
-          : rank !== undefined && rank < 20
-            ? OSU_COLORS.grayDark40
+          : rank !== undefined
+            ? rank < 20 ? OSU_COLORS.sharedDark : OSU_COLORS.shared
             : OSU_COLORS.grayDark20;
     ctx.fill();
     ctx.lineWidth = (selected ? 4.2 : hovered ? 3 : 1.4) / state.view.scale;
@@ -3246,7 +3298,6 @@ function render() {
   if (!state.payload) {
     return;
   }
-  syncMobileRelationshipDetails();
   els.loadingState.hidden = true;
   syncNavigation();
   renderSources();
@@ -3256,10 +3307,11 @@ function render() {
   renderGraphSearch();
   renderGraphAncestorPresets();
   renderSelectionChips();
-  renderRange();
   const graphData = visibleGraph();
+  renderQuestionStrip(graphData);
   renderMetrics(graphData);
   renderCurrentViewSummary(graphData);
+  renderGraphDensityNote(graphData);
   renderGraphBreadcrumbs();
   renderSummaryPanel(graphData);
   renderAncestorTable(graphData.common);
@@ -3267,6 +3319,7 @@ function render() {
   renderDetail();
   renderChainPanel(graphData);
   renderGraphSelectionCard(graphData);
+  syncDetailPanelOrder();
   drawGraph(graphData);
   writeUrlState();
 }
@@ -3309,8 +3362,7 @@ function hitTestNode(screenPoint) {
       bestDistance = distance;
     }
   }
-  const tapRadius = isCoarsePointer() ? 24 : 14;
-  return bestDistance <= tapRadius / state.view.scale ? best : null;
+  return bestDistance <= 14 / state.view.scale ? best : null;
 }
 
 function showTooltip(personIndex, screenPoint) {
@@ -3321,7 +3373,7 @@ function showTooltip(personIndex, screenPoint) {
   const person = state.people[personIndex];
   els.tooltip.innerHTML = `
     <strong>${escapeHtml(person.name)}</strong>
-    <span>${escapeHtml(personMeta(person) || `Genealogy record ${person.id}`)}</span>
+    <span>${escapeHtml(personMeta(person, personIndex) || `Genealogy record ${person.id}`)}</span>
   `;
   els.tooltip.hidden = false;
   const left = clamp(screenPoint.x + 14, 8, Math.max(8, els.canvas.clientWidth - 270));
@@ -3340,80 +3392,52 @@ function zoomAt(screenPoint, factor) {
   state.view.scale = nextScale;
   state.view.x = screenPoint.x - worldPoint.x * nextScale;
   state.view.y = screenPoint.y - worldPoint.y * nextScale;
-  drawGraph();
+  refreshGraphViewport();
 }
 
-function pointerList() {
-  return Array.from(state.activePointers.values());
+function refreshGraphViewport() {
+  const graphData = visibleGraph();
+  renderMetrics(graphData);
+  renderCurrentViewSummary(graphData);
+  renderGraphDensityNote(graphData);
+  renderGraphSelectionCard(graphData);
+  drawGraph(graphData);
 }
 
-function pointerDistance(points) {
-  return Math.hypot(points[0].x - points[1].x, points[0].y - points[1].y);
-}
-
-function pointerCenter(points) {
+function graphCenterPoint() {
   return {
-    x: (points[0].x + points[1].x) / 2,
-    y: (points[0].y + points[1].y) / 2,
+    x: els.canvas.clientWidth / 2,
+    y: els.canvas.clientHeight / 2,
   };
 }
 
-function startPinchGesture() {
-  const points = pointerList();
-  if (points.length < 2) {
-    state.pinchStart = null;
-    return;
+function performZoomAction(action) {
+  if (action === "in") {
+    zoomAt(graphCenterPoint(), 1.18);
+  } else if (action === "out") {
+    zoomAt(graphCenterPoint(), 0.82);
+  } else if (action === "width") {
+    state.needsFit = "width";
+    refreshGraphViewport();
+  } else if (action === "all") {
+    state.needsFit = "all";
+    refreshGraphViewport();
   }
-  const center = pointerCenter(points);
-  state.pinchStart = {
-    center,
-    distance: Math.max(1, pointerDistance(points)),
-    scale: state.view.scale,
-    centerWorld: screenToWorld(center),
-  };
 }
 
 function handlePointerDown(event) {
-  event.preventDefault();
   const point = canvasPoint(event);
-  state.activePointers.set(event.pointerId, point);
   state.pointerDown = true;
   state.pointerMoved = false;
   state.pointerStart = point;
   state.viewStart = { ...state.view };
   els.canvas.classList.add("dragging");
-  try {
-    els.canvas.setPointerCapture(event.pointerId);
-  } catch (_error) {
-    // Synthetic test events and some browser edge cases may not have capture.
-  }
-  if (state.activePointers.size >= 2) {
-    state.pointerMoved = true;
-    startPinchGesture();
-  }
+  els.canvas.setPointerCapture(event.pointerId);
 }
 
 function handlePointerMove(event) {
   const point = canvasPoint(event);
-  if (state.activePointers.has(event.pointerId)) {
-    state.activePointers.set(event.pointerId, point);
-  }
-  if (state.activePointers.size >= 2 && state.pinchStart) {
-    event.preventDefault();
-    const points = pointerList();
-    const center = pointerCenter(points);
-    const factor = pointerDistance(points) / state.pinchStart.distance;
-    const nextScale = clamp(state.pinchStart.scale * factor, MIN_SCALE, MAX_SCALE);
-    state.pointerMoved = true;
-    state.view.scale = nextScale;
-    state.view.x = center.x - state.pinchStart.centerWorld.x * nextScale;
-    state.view.y = center.y - state.pinchStart.centerWorld.y * nextScale;
-    hideTooltip();
-    drawGraph();
-    return;
-  }
   if (state.pointerDown) {
-    event.preventDefault();
     const dx = point.x - state.pointerStart.x;
     const dy = point.y - state.pointerStart.y;
     if (Math.hypot(dx, dy) > 3) {
@@ -3435,29 +3459,15 @@ function handlePointerMove(event) {
 }
 
 function handlePointerUp(event) {
-  event.preventDefault();
   const point = canvasPoint(event);
-  const wasPinching = state.activePointers.size >= 2 || Boolean(state.pinchStart);
-  state.activePointers.delete(event.pointerId);
-  state.pointerDown = state.activePointers.size > 0;
-  if (!state.pointerDown) {
-    els.canvas.classList.remove("dragging");
-  }
+  state.pointerDown = false;
+  els.canvas.classList.remove("dragging");
   try {
     els.canvas.releasePointerCapture(event.pointerId);
   } catch (_error) {
     // Pointer capture may already have been released by the browser.
   }
-  if (state.activePointers.size === 1) {
-    const remaining = pointerList()[0];
-    state.pointerStart = remaining;
-    state.viewStart = { ...state.view };
-    state.pinchStart = null;
-    state.pointerMoved = true;
-    return;
-  }
-  state.pinchStart = null;
-  if (!state.pointerMoved && !wasPinching) {
+  if (!state.pointerMoved) {
     const selected = hitTestNode(point);
     state.selectedNodeIndex = selected;
     if (selected !== null) {
@@ -3503,15 +3513,6 @@ els.viewTabs.forEach((button) => {
   button.addEventListener("click", () => setActiveView(button.dataset.view));
 });
 
-els.focusButtons.forEach((button) => {
-  button.addEventListener("click", () => setFocusMode(button.dataset.focusMode, "width"));
-});
-
-els.graphControlsPanel.addEventListener("toggle", () => {
-  state.graphControlsOpen = els.graphControlsPanel.open;
-  storeBoolean(GRAPH_CONTROLS_STORAGE_KEY, state.graphControlsOpen);
-});
-
 els.areaMenuButton.addEventListener("click", () => {
   setAreaMenuOpen(!state.areaMenuOpen);
 });
@@ -3554,25 +3555,16 @@ els.sharedAncestorsPanel.addEventListener("toggle", () => {
   state.sharedAncestorsOpen = els.sharedAncestorsPanel.open;
 });
 
-function updateSharedAncestorQueryFromInput() {
-  state.sharedAncestorQuery = els.ancestorTableSearch.value;
-  renderAncestorTable(state.currentGraphData?.common || commonAncestors());
-}
-
-els.ancestorTableSearch.addEventListener("input", updateSharedAncestorQueryFromInput);
-els.ancestorTableSearch.addEventListener("search", updateSharedAncestorQueryFromInput);
-els.ancestorTableSearch.addEventListener("change", updateSharedAncestorQueryFromInput);
-
-els.backToGroupView.addEventListener("click", () => {
+els.backToGroupView?.addEventListener("click", () => {
   backToGroupView();
 });
 
-els.clearSelectedNode.addEventListener("click", () => {
+els.clearSelectedNode?.addEventListener("click", () => {
   clearSelectedNode();
 });
 
-els.closeDetailsSheet.addEventListener("click", () => {
-  setDetailsOpen(false);
+els.closeDetailsSheet?.addEventListener("click", () => {
+  closeDetailsView();
 });
 
 els.detailBackdrop.addEventListener("click", () => {
@@ -3630,54 +3622,10 @@ els.clearFaculty.addEventListener("click", () => {
   render();
 });
 
-els.minShared.addEventListener("input", () => {
-  state.minShared = clamp(Number(els.minShared.value), 1, maxSharedWithAnyCommonAncestor());
-  markGraphChanged("width");
-  render();
-});
-
-els.visibleLimit.addEventListener("input", () => {
-  state.visibleAncestorLimit = Number(els.visibleLimit.value);
-  markGraphChanged("width");
-  render();
-});
-
-els.zoomOut.addEventListener("click", () => {
-  zoomAt({ x: els.canvas.clientWidth / 2, y: els.canvas.clientHeight / 2 }, 0.82);
-});
-
-els.zoomIn.addEventListener("click", () => {
-  zoomAt({ x: els.canvas.clientWidth / 2, y: els.canvas.clientHeight / 2 }, 1.18);
-});
-
-els.fitGraph.addEventListener("click", () => {
-  state.needsFit = "width";
-  drawGraph();
-});
-
-els.fitAllGraph.addEventListener("click", () => {
-  state.needsFit = "all";
-  drawGraph();
-});
-
-els.focusFaculty.addEventListener("click", () => {
-  state.needsFit = "faculty";
-  drawGraph();
-});
-
-els.focusSelectedPaths.addEventListener("click", () => {
-  if (state.selectedNodeIndex === null) {
-    return;
-  }
-  if (state.focusMode === "path") {
-    setFocusMode("common", "width");
-  } else {
-    showAdvisorPathsForNode(state.selectedNodeIndex);
-  }
-});
-
-els.resetGraph.addEventListener("click", () => {
-  resetGraphView();
+els.floatingZoomButtons.forEach((button) => {
+  button.addEventListener("click", () => {
+    performZoomAction(button.dataset.zoomAction);
+  });
 });
 
 els.canvas.addEventListener("pointerdown", handlePointerDown);
@@ -3687,8 +3635,6 @@ els.canvas.addEventListener("pointercancel", handlePointerUp);
 els.canvas.addEventListener("dblclick", handleDoubleClick);
 els.canvas.addEventListener("mouseleave", () => {
   state.pointerDown = false;
-  state.activePointers.clear();
-  state.pinchStart = null;
   state.hoveredNodeIndex = null;
   els.canvas.classList.remove("dragging");
   hideTooltip();
@@ -3704,7 +3650,7 @@ els.overview.addEventListener("pointerdown", handleOverviewPointerDown);
 
 window.addEventListener("resize", () => {
   state.needsFit = "width";
-  drawGraph();
+  refreshGraphViewport();
 });
 
 loadData()
