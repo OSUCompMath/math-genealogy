@@ -184,6 +184,17 @@ This writes `data/osu_mgp_graph.json`. The builder uses a shared per-person
 cache under `.cache/mgp_people`, so overlapping faculty lineages are fetched and
 stored once rather than re-scraped separately for every faculty member.
 
+Optionally enrich the static graph with high-confidence English Wikipedia
+matches:
+
+```bash
+python3 enrich_wikipedia_links.py
+```
+
+This only fills a Wikipedia URL when Wikidata has a unique Mathematics
+Genealogy Project ID (`P549`) match with an English Wikipedia sitelink. It does
+not use fuzzy name matching.
+
 The JSON is structured for efficient GUI queries:
 
 - one shared `people` table for all MGP records

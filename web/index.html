@@ -4,8 +4,23 @@
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <title>Ohio State Math Faculty Genealogy</title>
+    <meta name="description" content="Explore Ohio State mathematics faculty advisor lineages, shared ancestors, and department descendants.">
+    <meta property="og:title" content="Ohio State Math Faculty Genealogy">
+    <meta property="og:description" content="Explore advisor lineages, shared ancestors, and department descendants.">
+    <meta property="og:type" content="website">
+    <meta property="og:url" content="https://osucompmath.github.io/math-genealogy/web/">
+    <meta property="og:image" content="https://osucompmath.github.io/math-genealogy/web/assets/og-image.png">
+    <meta property="og:image:width" content="1200">
+    <meta property="og:image:height" content="630">
+    <meta name="twitter:card" content="summary_large_image">
+    <meta name="twitter:title" content="Ohio State Math Faculty Genealogy">
+    <meta name="twitter:description" content="Explore advisor lineages, shared ancestors, and department descendants.">
+    <meta name="twitter:image" content="https://osucompmath.github.io/math-genealogy/web/assets/og-image.png">
+    <link rel="icon" href="assets/favicon.svg" type="image/svg+xml">
+    <link rel="icon" href="assets/favicon-32.png" sizes="32x32" type="image/png">
+    <link rel="apple-touch-icon" href="assets/apple-touch-icon.png">
     <link rel="stylesheet" href="https://assets.bux.osu.edu/bux-webfonts2/bux-webfonts2.css">
-    <link rel="stylesheet" href="styles.css?v=20260721-feedback-49">
+    <link rel="stylesheet" href="styles.css?v=20260722-usability-7">
   </head>
   <body>
     <div class="app-shell">
@@ -73,8 +88,8 @@
             </div>
             <div class="graph-search">
               <label class="visually-hidden" for="graphSearch">Find faculty or ancestor in graph</label>
-              <input id="graphSearch" class="search-input" type="search" autocomplete="off" placeholder="Find faculty, ancestor, or descendants of...">
-              <div class="graph-ancestor-presets" id="graphAncestorPresets" aria-label="Suggested ancestors"></div>
+              <input id="graphSearch" class="search-input" type="search" autocomplete="off" placeholder="Find name or descendants...">
+              <div class="graph-ancestor-presets" id="graphAncestorPresets" aria-label="Suggested ancestors" hidden></div>
               <div class="graph-search-results" id="graphSearchResults"></div>
             </div>
           </div>
@@ -91,45 +106,20 @@
             <div id="graphTooltip" class="graph-tooltip" hidden></div>
             <div id="graphSelectionCard" class="graph-selection-card" hidden></div>
             <div id="graphDensityNote" class="graph-density-note" hidden></div>
+            <div class="graph-gesture-hint" aria-hidden="true">Pinch to zoom, drag to pan</div>
             <div class="floating-zoom-controls" aria-label="Always visible graph zoom controls">
               <button type="button" data-zoom-action="in" aria-label="Zoom in" title="Zoom in">+</button>
               <button type="button" data-zoom-action="out" aria-label="Zoom out" title="Zoom out">-</button>
-              <button type="button" data-zoom-action="all" aria-label="Reset graph view" title="Reset graph view">Reset</button>
+              <button type="button" data-zoom-action="width" aria-label="Fit graph width" title="Fit graph width">Width</button>
+              <button type="button" data-zoom-action="all" aria-label="Fit full graph" title="Fit full graph">Full</button>
             </div>
             <div class="graph-legend" aria-label="Graph legend">
               <span><i class="legend-dot faculty-dot"></i>Faculty</span>
-              <span><i class="legend-dot shared-dot"></i>Shared by all</span>
+              <span><i class="legend-dot shared-dot"></i><span id="sharedLegendLabel">Shared by all</span></span>
               <span><i class="legend-dot ancestor-dot"></i>Other ancestor</span>
             </div>
           </div>
 
-          <details id="sharedAncestorsPanel" class="table-panel shared-ancestor-panel graph-shared-panel">
-            <summary>
-              <span>
-                <strong>Shared By All</strong>
-                <small id="sharedAncestorsSummary">Ancestors shared by every selected faculty member</small>
-              </span>
-              <span class="summary-toggle">Table</span>
-            </summary>
-            <p class="table-note">
-              Rows are ancestors shared by every selected faculty member. They are ordered by shorter advisor paths, then by total links. Longest path is the farthest advisor chain from this ancestor to a shown faculty member. A ~ year is an approximate graph placement from nearby dated records.
-            </p>
-            <div class="table-wrap">
-              <table>
-                <thead>
-                  <tr>
-                    <th>Name</th>
-                    <th>Year</th>
-                    <th>Country</th>
-                    <th title="Number of selected faculty whose ancestry contains this ancestor">Faculty<br>Shown</th>
-                    <th title="Longest advisor path from this ancestor to any shown faculty member">Longest<br>Path</th>
-                    <th title="Total advisor links from this ancestor to all shown faculty">Total<br>Links</th>
-                  </tr>
-                </thead>
-                <tbody id="ancestorRows"></tbody>
-              </table>
-            </div>
-          </details>
         </section>
 
         <section class="detail-drawer" aria-label="Selection details">
@@ -144,6 +134,33 @@
             <div id="relationshipPanel" class="relationship-panel"></div>
             <div id="nodeDetail" class="node-detail"></div>
             <div id="chainPanel" class="chain-panel"></div>
+            <details id="sharedAncestorsPanel" class="table-panel shared-ancestor-panel" data-detail-section="shared-table">
+              <summary>
+                <span>
+                  <strong id="sharedAncestorsTitle">Shared By All</strong>
+                  <small id="sharedAncestorsSummary"></small>
+                </span>
+                <span class="summary-toggle">Table</span>
+              </summary>
+              <p class="table-note" id="sharedAncestorsNote">
+                Rows show shared-by-most ancestors, capped to the most useful entries. Count shows how many selected faculty descendants each ancestor reaches.
+              </p>
+              <label class="table-filter" for="ancestorTableSearch">
+                <span>Search table</span>
+                <input id="ancestorTableSearch" class="search-input" type="search" autocomplete="off" placeholder="Ancestor name">
+              </label>
+              <div class="table-wrap">
+                <table>
+                  <thead>
+                    <tr>
+                      <th>Name</th>
+                      <th id="ancestorMatchedHeader" title="Selected faculty descendants reached by this ancestor">Count</th>
+                    </tr>
+                  </thead>
+                  <tbody id="ancestorRows"></tbody>
+                </table>
+              </div>
+            </details>
           </div>
         </section>
         <button type="button" id="detailBackdrop" class="detail-backdrop" aria-label="Close details" hidden></button>
@@ -152,6 +169,6 @@
       </main>
     </div>
 
-    <script src="app.js?v=20260721-feedback-49"></script>
+    <script src="app.js?v=20260722-usability-7"></script>
   </body>
 </html>

@@ -29,6 +29,12 @@
   box-sizing: border-box;
 }
 
+html,
+body {
+  height: 100%;
+  overflow: hidden;
+}
+
 body {
   margin: 0;
   min-width: 320px;
@@ -66,8 +72,10 @@ button:disabled {
 .app-shell {
   display: grid;
   grid-template-columns: minmax(260px, 320px) minmax(0, 1fr);
-  grid-template-rows: auto 1fr;
-  min-height: 100vh;
+  grid-template-rows: auto minmax(0, 1fr);
+  height: 100dvh;
+  min-height: 100dvh;
+  overflow: hidden;
 }
 
 .topbar {
@@ -163,7 +171,8 @@ h2 {
   padding: 16px;
   border-right: 1px solid var(--line);
   background: var(--gray-light-80);
-  overflow: visible;
+  min-height: 0;
+  overflow: hidden;
 }
 
 .workspace {
@@ -172,16 +181,33 @@ h2 {
   gap: 16px;
   padding: 16px;
   min-width: 0;
-  overflow: visible;
+  min-height: 0;
+  overflow: hidden;
 }
 
 .detail-drawer {
+  min-width: 0;
+  min-height: 0;
   padding: 0;
 }
 
 .detail-panel {
-  max-height: none;
-  overflow: visible;
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  min-width: 0;
+  min-height: 0;
+  overflow-x: hidden;
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+}
+
+.detail-panel > .panel-heading {
+  position: sticky;
+  top: 0;
+  z-index: 4;
+  padding-bottom: 8px;
+  background: var(--paper);
 }
 
 .detail-actions {
@@ -341,7 +367,11 @@ h2 {
 }
 
 .faculty-panel {
-  min-height: 320px;
+  display: flex;
+  flex-direction: column;
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow: hidden;
 }
 
 .faculty-compare-hint {
@@ -396,11 +426,13 @@ h2 {
 
 .faculty-list {
   display: grid;
+  flex: 1 1 auto;
   gap: 7px;
   margin-top: 12px;
-  max-height: min(52vh, 540px);
+  min-height: 0;
+  max-height: none;
   overflow: auto;
-  overscroll-behavior: auto;
+  overscroll-behavior: contain;
 }
 
 .faculty-item {
@@ -515,8 +547,12 @@ button.chain-faculty-link {
 }
 
 .graph-panel {
-  min-height: 760px;
+  display: flex;
+  flex-direction: column;
+  flex: 1 1 auto;
+  min-height: 0;
   padding: 14px;
+  overflow: hidden;
 }
 
 .graph-toolbar {
@@ -607,6 +643,10 @@ button.chain-faculty-link {
   flex-wrap: wrap;
   gap: 6px;
   margin-top: 7px;
+}
+
+.graph-ancestor-presets[hidden] {
+  display: none;
 }
 
 .graph-preset {
@@ -770,8 +810,9 @@ button.chain-faculty-link {
 
 .canvas-wrap {
   position: relative;
+  flex: 1 1 auto;
   width: 100%;
-  min-height: 670px;
+  min-height: 0;
   border: 1px solid var(--line);
   border-radius: 8px;
   background: var(--gray-light-90);
@@ -813,7 +854,7 @@ button.chain-faculty-link {
 #graphCanvas {
   display: block;
   width: 100%;
-  height: clamp(620px, 70vh, 820px);
+  height: 100%;
   cursor: grab;
   touch-action: pan-y;
 }
@@ -892,6 +933,10 @@ button.chain-faculty-link {
 }
 
 .graph-density-note[hidden] {
+  display: none;
+}
+
+.graph-gesture-hint {
   display: none;
 }
 
@@ -1035,29 +1080,26 @@ button.chain-faculty-link {
 
 .shared-ancestor-panel {
   min-height: 0;
+  margin-top: 12px;
   padding: 0;
 }
 
-.graph-shared-panel {
-  margin-top: 14px;
-}
-
 .shared-ancestor-panel[open] {
-  padding: 14px;
+  padding: 0;
 }
 
 .shared-ancestor-panel > summary {
   margin: 0;
-  border: 0;
-  border-left: 4px solid var(--scarlet);
+  border: 1px solid var(--line);
   border-radius: 8px;
-  background: var(--white);
+  background: var(--gray-light-90);
+  box-shadow: var(--shadow);
 }
 
 .shared-ancestor-panel[open] > summary {
   border: 1px solid var(--line);
-  border-left: 4px solid var(--scarlet);
   background: var(--gray-light-90);
+  box-shadow: var(--shadow);
 }
 
 .shared-ancestor-panel:not([open]) {
@@ -1069,10 +1111,10 @@ button.chain-faculty-link {
 }
 
 .table-wrap {
-  margin-top: 12px;
-  max-height: none;
-  overflow-x: auto;
-  overflow-y: visible;
+  margin: 10px -2px 0;
+  max-height: clamp(220px, 34vh, 380px);
+  overflow-x: hidden;
+  overflow-y: auto;
 }
 
 .table-note {
@@ -1082,11 +1124,38 @@ button.chain-faculty-link {
   line-height: 1.35;
 }
 
+.table-filter {
+  display: grid;
+  gap: 5px;
+  margin-top: 10px;
+}
+
+.table-filter span {
+  color: var(--muted);
+  font-size: 0.72rem;
+  font-weight: 800;
+  text-transform: uppercase;
+}
+
 table {
   width: 100%;
-  min-width: 680px;
+  table-layout: fixed;
   border-collapse: collapse;
   font-size: 0.86rem;
+}
+
+th:first-child,
+td:first-child {
+  width: auto;
+}
+
+th:nth-child(2),
+td:nth-child(2) {
+  width: 68px;
+}
+
+#ancestorMatchedHeader {
+  white-space: nowrap;
 }
 
 th,
@@ -1095,6 +1164,7 @@ td {
   border-bottom: 1px solid var(--line);
   text-align: left;
   vertical-align: top;
+  overflow-wrap: anywhere;
 }
 
 th {
@@ -1113,13 +1183,34 @@ td.numeric {
   font-variant-numeric: tabular-nums;
 }
 
-#ancestorRows tr {
-  cursor: pointer;
-}
-
 #ancestorRows tr:hover,
 #ancestorRows tr:focus-within {
   background: var(--gray-light-90);
+}
+
+.table-person-button {
+  display: inline;
+  display: -webkit-box;
+  max-height: 2.7em;
+  min-height: 0;
+  overflow: hidden;
+  padding: 0;
+  border: 0;
+  color: var(--scarlet-dark-40);
+  background: transparent;
+  cursor: pointer;
+  font: inherit;
+  font-weight: 700;
+  line-height: 1.3;
+  overflow-wrap: anywhere;
+  text-align: left;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+}
+
+.table-person-button:hover,
+.table-person-button:focus-visible {
+  text-decoration: underline;
 }
 
 td a,
@@ -1129,6 +1220,7 @@ td a,
 }
 
 .summary-panel {
+  min-width: 0;
   margin-top: 12px;
 }
 
@@ -1160,6 +1252,12 @@ td a,
   overflow: hidden;
 }
 
+.detail-section:not([open]),
+.shared-ancestor-panel:not([open]) {
+  min-height: 45px;
+  overflow: visible;
+}
+
 .detail-section summary,
 .shared-ancestor-panel summary,
 .relationship-more-header {
@@ -1179,8 +1277,13 @@ td a,
   cursor: pointer;
 }
 
+.relationship-more-header {
+  cursor: pointer;
+}
+
 .detail-section summary::-webkit-details-marker,
-.shared-ancestor-panel summary::-webkit-details-marker {
+.shared-ancestor-panel summary::-webkit-details-marker,
+.relationship-more-header::-webkit-details-marker {
   display: none;
 }
 
@@ -1202,12 +1305,12 @@ td a,
 .detail-section summary small,
 .shared-ancestor-panel summary small,
 .relationship-more-header small {
-  overflow: hidden;
   color: var(--muted);
   font-size: 0.76rem;
   font-weight: 500;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  line-height: 1.18;
+  overflow-wrap: anywhere;
+  white-space: normal;
 }
 
 .relationship-more-header small {
@@ -1254,6 +1357,7 @@ details:not([open]) > summary .summary-toggle::before {
 .relationship-more .relationship-paths,
 .relationship-more .relationship-actions,
 .shared-ancestor-panel .table-note,
+.shared-ancestor-panel .table-filter,
 .shared-ancestor-panel .table-wrap {
   margin-top: 10px;
 }
@@ -1382,16 +1486,6 @@ details:not([open]) > summary .summary-toggle::before {
   font-weight: 800;
 }
 
-.copy-id-button {
-  min-height: 24px;
-  margin-left: 6px;
-  padding: 2px 7px;
-  color: var(--scarlet-dark-40);
-  font-size: 0.72rem;
-  font-weight: 800;
-  vertical-align: baseline;
-}
-
 .tag-row {
   display: flex;
   flex-wrap: wrap;
@@ -1440,6 +1534,7 @@ button.tag:focus-visible {
 .relationship-card {
   display: grid;
   gap: 7px;
+  min-width: 0;
   padding: 11px;
   border: 1px solid rgba(186, 12, 47, 0.34);
   border-radius: 7px;
@@ -1453,6 +1548,7 @@ button.tag:focus-visible {
 .relationship-main {
   display: grid;
   gap: 4px;
+  min-width: 0;
 }
 
 .relationship-kicker {
@@ -1466,6 +1562,7 @@ button.tag:focus-visible {
   color: var(--ink);
   font-size: 0.96rem;
   line-height: 1.25;
+  overflow-wrap: anywhere;
 }
 
 .relationship-card p,
@@ -1491,6 +1588,7 @@ button.tag:focus-visible {
 .relationship-stats {
   display: grid;
   gap: 5px;
+  min-width: 0;
 }
 
 .relationship-stats {
@@ -1526,10 +1624,9 @@ button.tag:focus-visible {
   display: grid;
   gap: 8px;
   margin-top: 8px;
-  max-height: min(46vh, 540px);
+  max-height: clamp(220px, 34vh, 380px);
   overflow-y: auto;
   padding-right: 3px;
-  overscroll-behavior: contain;
 }
 
 .chain-filter {
@@ -1586,6 +1683,7 @@ button.tag:focus-visible {
   color: var(--muted);
   font-size: 0.78rem;
   line-height: 1.35;
+  overflow-wrap: anywhere;
 }
 
 .chain-empty {
@@ -1630,31 +1728,54 @@ button.tag:focus-visible {
   display: none;
 }
 
-@media (min-width: 1500px) {
+@media (min-width: 981px) {
+  .sidebar {
+    margin: 16px 0 16px 16px;
+    padding: 14px;
+    border: 1px solid var(--line);
+    border-radius: 8px;
+    background: var(--paper);
+    box-shadow: var(--shadow);
+  }
+
+  .sidebar > .panel {
+    padding: 0;
+    border: 0;
+    background: transparent;
+    box-shadow: none;
+  }
+
+  .sidebar > .panel + .panel {
+    margin-top: 14px;
+  }
+
   .workspace {
     display: grid;
-    grid-template-columns: minmax(600px, 1fr) minmax(270px, 320px);
-    align-items: start;
+    grid-template-columns: minmax(0, 1fr) minmax(280px, 340px);
+    grid-template-rows: minmax(0, 1fr);
+    align-items: stretch;
   }
 
   .metrics {
-    grid-column: 1 / -1;
+    display: none;
   }
 
   .data-footnote {
-    grid-column: 1;
-    padding-right: 16px;
+    display: none;
   }
 
   .graph-panel {
     grid-column: 1;
+    height: 100%;
   }
 
   .detail-drawer {
     grid-column: 2;
-    grid-row: 1 / span 2;
-    position: sticky;
-    top: 16px;
+    height: 100%;
+  }
+
+  .detail-panel {
+    height: 100%;
   }
 
 }
@@ -1692,47 +1813,74 @@ button.tag:focus-visible {
 
 }
 
-@media (max-width: 860px) {
+@media (max-width: 980px) {
+  html,
+  body {
+    height: 100%;
+    overflow: hidden;
+  }
+
   .app-shell {
-    display: block;
+    display: grid;
+    grid-template-rows: auto minmax(0, 1fr);
+    height: 100dvh;
+    min-height: 100dvh;
+    overflow: hidden;
   }
 
   .topbar {
-    position: sticky;
-    top: 0;
+    position: relative;
     z-index: 10;
+    display: grid;
+    grid-template-columns: minmax(0, 1fr);
+    min-width: 0;
   }
 
   .top-actions {
+    display: none;
     justify-items: start;
   }
 
   .view-tabs {
-    width: 100%;
-    display: grid;
+    display: grid !important;
     grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 4px;
+    width: calc(100vw - 24px);
+    max-width: calc(100vw - 24px);
+    min-width: 0;
+    overflow: hidden;
   }
 
   .view-tabs button {
-    padding: 0 6px;
+    min-width: 0;
+    width: auto;
+    padding: 0 4px;
   }
 
   .sidebar,
   .workspace,
   .detail-drawer {
     display: none;
+    min-height: 0;
   }
 
   .app-shell[data-active-view="faculty"] .sidebar {
     display: flex;
+    overflow-y: auto;
+    -webkit-overflow-scrolling: touch;
   }
 
   .app-shell[data-active-view="graph"] .workspace {
     display: flex;
+    overflow-y: auto;
+    -webkit-overflow-scrolling: touch;
   }
 
   .app-shell[data-active-view="details"] .workspace {
     display: flex;
+    width: 100%;
+    min-width: 0;
+    overflow: hidden;
   }
 
   .app-shell[data-active-view="details"] .metrics,
@@ -1743,12 +1891,18 @@ button.tag:focus-visible {
 
   .app-shell[data-active-view="details"] .detail-drawer {
     display: block;
+    width: 100%;
+    min-width: 0;
     padding: 0;
   }
 
   .app-shell[data-active-view="details"] .detail-panel {
+    width: 100%;
+    min-width: 0;
+    height: 100%;
     max-height: none;
-    overflow: visible;
+    overflow-y: auto;
+    -webkit-overflow-scrolling: touch;
   }
 
   .app-shell[data-active-view="details"] .mobile-detail-close {
@@ -1760,7 +1914,7 @@ button.tag:focus-visible {
   }
 
   .faculty-list {
-    max-height: min(60vh, 560px);
+    max-height: none;
     overflow: auto;
   }
 
@@ -1844,12 +1998,18 @@ button.tag:focus-visible {
     min-height: 30px;
   }
 
+  .view-tabs {
+    width: 100%;
+    max-width: 366px;
+  }
+
   .source-row {
     justify-content: flex-start;
   }
 
   .workspace,
   .sidebar {
+    height: 100%;
     padding: 12px;
   }
 
@@ -1866,6 +2026,50 @@ button.tag:focus-visible {
 
   .graph-toolbar {
     order: 1;
+    gap: 7px;
+    margin-bottom: 8px;
+  }
+
+  #graphSubtitle {
+    margin-top: 2px;
+    font-size: 0.78rem;
+    line-height: 1.22;
+  }
+
+  .graph-search {
+    display: grid;
+    gap: 5px;
+  }
+
+  .graph-search .search-input {
+    min-height: 34px;
+    padding: 5px 8px;
+    font-size: 0.92rem;
+  }
+
+  .graph-ancestor-presets {
+    flex-wrap: nowrap;
+    gap: 5px;
+    margin-top: 0;
+    overflow-x: auto;
+    overflow-y: hidden;
+    scrollbar-width: none;
+  }
+
+  .graph-ancestor-presets::-webkit-scrollbar {
+    display: none;
+  }
+
+  .graph-preset {
+    flex: 0 0 auto;
+    min-height: 26px;
+    padding: 2px 7px;
+    font-size: 0.7rem;
+  }
+
+  .graph-search-results {
+    top: calc(100% + 4px);
+    max-height: min(280px, 48vh);
   }
 
   .question-strip {
@@ -1912,6 +2116,7 @@ button.tag:focus-visible {
 
   #graphCanvas {
     height: 430px;
+    touch-action: none;
   }
 
   .graph-selection-card {
@@ -1923,24 +2128,40 @@ button.tag:focus-visible {
 
   .graph-legend {
     left: 10px;
-    right: 10px;
+    right: auto;
     bottom: 10px;
+    width: min(350px, calc(100% - 20px));
   }
 
   .graph-density-note {
     left: 10px;
-    right: 10px;
+    right: auto;
     bottom: 58px;
+    width: min(350px, calc(100% - 20px));
     max-width: none;
   }
 
-  .floating-zoom-controls {
-    right: 10px;
-    width: 54px;
+  .graph-gesture-hint {
+    position: absolute;
+    right: auto;
+    left: 50%;
+    bottom: 104px;
+    z-index: 2;
+    display: block;
+    max-width: calc(100% - 20px);
+    padding: 5px 8px;
+    border: 1px solid rgba(207, 212, 216, 0.95);
+    border-radius: 999px;
+    background: rgba(255, 255, 255, 0.9);
+    color: var(--gray-dark-60);
+    font-size: 0.72rem;
+    font-weight: 800;
+    pointer-events: none;
+    transform: translateX(-50%);
   }
 
-  .floating-zoom-controls button {
-    width: 40px;
+  .floating-zoom-controls {
+    display: none;
   }
 
   .overview-canvas {
